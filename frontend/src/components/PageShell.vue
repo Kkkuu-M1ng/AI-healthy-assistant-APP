@@ -43,7 +43,7 @@ function go(path) {
   background: #f7fbfb;
 
   position: relative;
-  overflow: hidden;          /* 防止内容溢出 */
+  overflow: hidden;         
 
   box-sizing: border-box;
 }
@@ -51,7 +51,7 @@ function go(path) {
 .top{padding:12px 16px 8px}
 .title{font-size:16px;font-weight:800;color:#1f2b2b}
 .content{
-  padding: 0 16px;          /* 左右挤压 */
+  padding: 0 16px;          
   box-sizing: border-box;
 }
 
