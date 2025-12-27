@@ -1,0 +1,16 @@
+# backend
+backend/app.db
+backend/*.db
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
