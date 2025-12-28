@@ -234,7 +234,7 @@ function toast(msg) {
 
 .mini {
   border: 1px solid #e6f2f2;
-  background: #f3fbfb;
+  background: #ffffff;
   border-radius: 6px;
   padding: 8px;
   margin-bottom: 8px;
@@ -247,7 +247,7 @@ function toast(msg) {
   color: #1f2b2b;
 }
 .mini-text.light {
-  color: #567;
+  color: 1f2b2b;
 }
 
 /* AI 提示+历史记录 */
@@ -281,7 +281,7 @@ function toast(msg) {
   font-weight: 700;
 }
 .btn.pill {
-  background: #a9d6ef;
+  background: #2e7bdc;
   color: #ffffff;
 }
 .btn.primary {

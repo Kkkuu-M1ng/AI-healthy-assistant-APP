@@ -7,12 +7,21 @@ from .db import create_db_and_tables
 
 from .routers import auth
 from .routers import me
+from .routers import members
+from .routers import advice
+from .routers import tasks
+
 
 
 app = FastAPI(title="AI问诊APP API")
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
+app.include_router(members.router, prefix="/api")
+app.include_router(advice.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
+
+
 
 # 允许前端本地开发访问（Vue 默认 5173）
 app.add_middleware(
