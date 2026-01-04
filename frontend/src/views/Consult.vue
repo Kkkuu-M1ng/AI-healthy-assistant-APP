@@ -149,6 +149,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onBeforeUnmount, ref } from "vue";
 import PageShell from "../components/PageShell.vue"; 
+import { apiPost } from '../api/http'; 
 
 /** ============ 配置：四类模式 ============ */
 const modes = [
@@ -232,6 +233,26 @@ function saveSessions() {
 const sessions = ref(loadSessions());
 const currentSessionId = ref("");
 
+// 👇 2. 核心修改：确保当前会话有“后端ID”
+// 如果是老数据没有 serverId，或者新会话，都需要去后端申请一个
+async function ensureBackendSession(session) {
+  if (session.serverId) return session.serverId;
+
+  try {
+    console.log("正在向后端申请会话ID...");
+    // 假设当前用户是 user_id=1
+    const res = await apiPost('/consult/sessions?user_id=1', {});
+    session.serverId = res.id; // 把后端返回的 ID 存到本地对象里
+    saveSessions(); // 存入 localStorage，下次不用再申请
+    console.log("后端会话已建立，ID:", session.serverId);
+    return session.serverId;
+  } catch (e) {
+    console.error("连接后端失败:", e);
+    // 这里可以加一个 Toast 提示用户
+    return null;
+  }
+}
+
 function ensureSession() {
   if (sessions.value.length === 0) {
     const s = {
@@ -274,10 +295,12 @@ function touchSessionPreview() {
   saveSessions();
 }
 
-function newSession() {
+// 👇 3. 新建会话时，不立刻请求后端，等发消息时再请求（懒加载），防止产生大量空会话
+async function newSession() {
   const idx = sessions.value.length + 1;
   const s = {
-    id: uid(),
+    id: uid(), // 前端路由用的 UUID
+    serverId: null, // ⏳ 等待连接后端分配
     mode: mode.value,
     title: `会话 ${idx}`,
     updatedAt: nowDateTime(),
@@ -339,52 +362,61 @@ const loading = ref(false);
 
 const canSend = computed(() => input.value.trim().length > 0 && !loading.value);
 
-async function callAI(kind, payload) {
-  // TODO: 替换成真实四个接口调用
-  // - common / child / pregnant / elder
-  // payload: { text, images? }
-  await new Promise(r => setTimeout(r, 700));
-
-  const prefix = {
-    common: "【常用】",
-    child: "【儿童】",
-    pregnant: "【孕妇】",
-    elder: "【老年】",
-  }[kind] || "【常用】";
-
-  const t = payload.text?.trim() ? `我收到你的描述：${payload.text}\n\n` : "";
-  const img = payload.hasImage ? "我也收到你上传的图片（已记录）。\n\n" : "";
-  return `${prefix}${t}${img}请补充：症状开始时间、严重程度、是否发热/疼痛、既往史与当前用药。\n\n若出现胸痛呼吸困难、意识异常、持续高热不退、明显出血等，请尽快就医/急诊。`;
-}
-
 async function sendText() {
   const text = input.value.trim();
   if (!text || loading.value) return;
 
+  // 1. 前端UI立刻上屏
   currentSession.value.messages.push({
-    id: uid(),
-    role: "user",
-    type: "text",
-    time: nowTime(),
-    text,
+    id: uid(), role: "user", type: "text", time: nowTime(), text
   });
   input.value = "";
   touchSessionPreview();
   scrollToBottom();
 
   loading.value = true;
+
   try {
-    const reply = await callAI(mode.value, { text, hasImage: false });
+    // 2. 确保有后端的 SessionID
+    const serverId = await ensureBackendSession(currentSession.value);
+    if (!serverId) {
+      throw new Error("无法连接到服务器，请检查网络或后端服务");
+    }
+
+    // 3. 构建 Prompt (实现你的专科路由逻辑)
+    // 技巧：把当前模式对应的 Prompt 拼接到用户内容前面，或者通过 system 角色发送
+    // 这里我们简单粗暴地拼接，让 AI 知道它的身份
+    const currentModeConfig = modes.find(m => m.key === mode.value);
+    const systemInstruction = currentModeConfig ? `【系统指令：${currentModeConfig.prompt}】\n` : "";
+    
+    // 如果是该会话的第一句话，带上 System Prompt，否则只发内容
+    // 简单起见，我们每次都带上模式标记，让 AI 保持人设
+    const finalContent = `${systemInstruction}用户描述：${text}`;
+
+    // 4. 调用后端 API
+    // 注意：这里用的是我们刚测通的 /chat 接口
+    const res = await apiPost(`/consult/${serverId}/chat?content=${encodeURIComponent(finalContent)}`, {});
+
+    // 5. 后端返回结果上屏
     currentSession.value.messages.push({
-      id: uid(),
-      role: "ai",
-      type: "text",
+      id: uid(), 
+      role: "ai", 
+      type: "text", 
       time: nowTime(),
-      text: reply,
+      text: res.content // 后端返回的 JSON 里 content 字段
     });
-    touchSessionPreview();
+    
+    saveSessions(); // 保存聊天记录到本地
+
+  } catch (err) {
+    console.error(err);
+    currentSession.value.messages.push({
+      id: uid(), role: "ai", type: "text", time: nowTime(),
+      text: `(发送失败: ${err.message || '网络错误'})` 
+    });
   } finally {
     loading.value = false;
+    touchSessionPreview();
     scrollToBottom();
   }
 }

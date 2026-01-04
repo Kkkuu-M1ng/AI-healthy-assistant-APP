@@ -10,6 +10,7 @@ from .routers import me
 from .routers import members
 from .routers import advice
 from .routers import tasks
+from .routers import consult 
 
 
 
@@ -20,7 +21,7 @@ app.include_router(me.router, prefix="/api")
 app.include_router(members.router, prefix="/api")
 app.include_router(advice.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
-
+app.include_router(consult.router, prefix="/api")
 
 
 # 允许前端本地开发访问（Vue 默认 5173）

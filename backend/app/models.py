@@ -63,4 +63,27 @@ class TaskItem(SQLModel, table=True):
     detail_json: str = Field(default="[]")   # list[str]
     logs_json: str = Field(default="[]")     # list[str] 完成记录时间戳列表（可选）
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)    
+    created_at: datetime = Field(default_factory=datetime.utcnow) 
+
+class ConsultSession(SQLModel, table=True):
+    """
+    问诊会话表：代表一次完整的问诊记录（比如“1月5日关于发烧的咨询”）
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    
+    # 记录创建时间
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ChatMessage(SQLModel, table=True):
+    """
+    聊天消息表：代表会话中的一句具体的话
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(index=True) # 关联到哪个 ConsultSession
+    
+    role: str   # 角色："user" (用户) 或 "assistant" (AI)
+    content: str # 具体的聊天内容
+    
+    # 记录时间
+    created_at: datetime = Field(default_factory=datetime.utcnow)       
