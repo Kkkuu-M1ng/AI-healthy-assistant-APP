@@ -15,26 +15,30 @@ class User(SQLModel, table=True):
     nickname: Optional[str] = None
     avatar_url: Optional[str] = None
 
-    # “我的信息”先简单放这里
-    full_name: Optional[str] = None
+    full_name: Optional[str] = None 
     gender: Optional[str] = None
     age: Optional[int] = None
 
 class FamilyMember(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-
-    # 归属哪个用户
     user_id: int = Field(index=True)
 
-    # 成员基础信息
     name: str
-    relation: str  # 本人/爸爸/妈妈/孩子...
+    relation: str  # 本人/爸爸/妈妈...
     gender: Optional[str] = None
     age: Optional[int] = None
-
-    # 标签用 JSON 字符串存（API 给/收 list[str] 更舒服）
-    tags_json: str = Field(default="[]")
-
+    
+    # 👇👇👇 健康档案全家桶（全部搬到这里） 👇👇👇
+    height: Optional[float] = None
+    weight: Optional[float] = None
+    
+    tags_json: str = Field(default="[]")      # 既往病史
+    lifestyle_json: str = Field(default="[]") # 生活方式
+    
+    allergies: str = ""      # 过敏 (安全红线)
+    meds: str = ""           # 用药 (安全红线)
+    special_status: str = "" # 特殊状态
+    
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AdviceItem(SQLModel, table=True):

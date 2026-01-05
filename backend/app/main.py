@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles 
 
 from .db import create_db_and_tables
 
@@ -14,6 +15,7 @@ from .routers import consult
 
 
 
+
 app = FastAPI(title="AI问诊APP API")
 
 app.include_router(auth.router, prefix="/api")
@@ -23,6 +25,7 @@ app.include_router(advice.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(consult.router, prefix="/api")
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # 允许前端本地开发访问（Vue 默认 5173）
 app.add_middleware(

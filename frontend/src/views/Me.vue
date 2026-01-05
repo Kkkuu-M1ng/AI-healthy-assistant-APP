@@ -83,6 +83,7 @@
 
         <!-- 编辑模式（尽量短：更多字段建议你后面放“更多/展开”） -->
         <div v-else class="card">
+          <div class="form-body">
           <div class="form">
             <label class="field">
               <div class="label">昵称</div>
@@ -152,6 +153,7 @@
               <button class="btn primary" @click="saveProfile">保存</button>
             </div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -263,65 +265,85 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, onMounted } from "vue";
 import PageShell from "../components/PageShell.vue"; 
+import { apiGet, apiPost, getToken } from "../api/http"; 
 
 // ====== localStorage store（写在组件内，避免你额外建文件）======
 const LS_KEY = "ai_family_doc_v1";
+const API_BASE = "http://127.0.0.1:8000/api"; 
 
-function safeUUID() {
-  try { return crypto.randomUUID(); }
-  catch { return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16); }
+async function apiRequest(method, path, body) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${getToken()}` 
+    },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) throw new Error(`${method} 请求失败`);
+  return resp.json();
 }
 
-function loadState() {
+const profile = reactive({
+  id: "",          // User ID
+  memberId: null,  // "本人"在成员表里的 ID (关键)
+  avatar: "",
+  nickname: "加载中...",
+  gender: "",
+  age: null,
+  height: null,
+  weight: null,
+  chronicTags: [],
+  allergies: "",
+  meds: "",
+});
+
+const members = ref([]); // 改为 ref 数组，方便整体替换
+const loading = ref(false);
+
+async function initData() {
+  loading.value = true;
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+    // A. 并发获取：账号信息 + 家庭成员列表
+    const [userRes, membersRes] = await Promise.all([
+      apiGet('/me'),      // 对应 me.py 的 GET /me
+      apiGet('/members')  // 对应 members.py 的 GET /members
+    ]);
+
+    // B. 填充账号基础信息
+    profile.id = userRes.id;
+    profile.avatar = userRes.avatar_url;
+    profile.nickname = userRes.nickname;
+
+    // C. 找到“本人”的那份健康档案
+    const self = membersRes.find(m => m.relation === '本人');
+    if (self) {
+      profile.memberId = self.id;
+      profile.gender = self.gender || "";
+      profile.age = self.age;
+      profile.height = self.height;
+      profile.weight = self.weight;
+      profile.chronicTags = self.tags || [];
+      profile.allergies = self.allergies || "";
+      profile.meds = self.meds || "";
+    }
+
+    // D. 填充家庭成员列表
+    members.value = membersRes;
+
+  } catch (e) {
+    console.error("加载数据失败", e);
+  } finally {
+    loading.value = false;
   }
 }
 
-function saveState() {
-  localStorage.setItem(LS_KEY, JSON.stringify({ profile, members }));
-}
+onMounted(() => {
+  initData();
+});
 
-const persisted = loadState();
-
-const profile = reactive(
-  persisted?.profile ?? {
-    id: `U-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${Math.random().toString(16).slice(2,6).toUpperCase()}`,
-    avatar: "",
-    nickname: "未命名用户",
-    gender: "",
-    age: null,
-    height: null,
-    weight: null,
-    chronicTags: [],
-    allergies: "",
-    meds: "",
-  }
-);
-
-const members = reactive(
-  persisted?.members ?? [
-    { id: "self", relation: "本人", name: "我", gender: "", age: null, tags: [], notes: "" },
-  ]
-);
-
-// 同步“本人”成员（统一逻辑，后面首页选成员不需要特判）
-function syncSelf() {
-  const self = members.find(m => m.id === "self");
-  if (!self) return;
-  self.name = profile.nickname || "我";
-  self.gender = profile.gender || "";
-  self.age = profile.age ?? null;
-  self.tags = Array.isArray(profile.chronicTags) ? [...profile.chronicTags] : [];
-}
-syncSelf();
-
-// ====== 顶部指标 ======
 const bmi = computed(() => {
   const h = Number(profile.height);
   const w = Number(profile.weight);
@@ -361,18 +383,35 @@ function cancelEditProfile() {
   editingProfile.value = false;
 }
 
-function saveProfile() {
-  Object.assign(profile, clone(profileDraft));
-  syncSelf();
-  saveState();
-  editingProfile.value = false;
+async function saveProfile() {
+  try {
+    const payload = {
+      name: profileDraft.nickname,
+      gender: profileDraft.gender,
+      age: profileDraft.age,
+      height: profileDraft.height,
+      weight: profileDraft.weight,
+      tags: profileDraft.chronicTags,
+      allergies: profileDraft.allergies,
+      meds: profileDraft.meds
+    };
+    
+    // 调用后端的 PUT 接口更新“本人”档案
+    await apiRequest('PUT', `/members/${profile.memberId}`, payload);
+    
+    // 更新本地显示
+    Object.assign(profile, clone(profileDraft));
+    editingProfile.value = false;
+    alert("个人信息已同步至云端");
+  } catch (e) {
+    alert("保存失败: " + e.message);
+  }
 }
 
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(String(text));
   } catch {
-    // 忽略（你也可以自己加 toast）
   }
 }
 
@@ -398,7 +437,7 @@ function addProfileTag() {
 }
 
 // ====== 成员管理 ======
-const relationPreset = ["父亲","母亲","配偶","孩子","祖父母","其他"];
+const relationPreset = ["父亲","母亲","丈夫","妻子","孩子","爷爷","奶奶"];
 
 const memberDialog = ref(false);
 const memberDialogTitle = ref("新增成员");
@@ -444,27 +483,57 @@ function addMemberTag() {
   memberTagInput.value = "";
 }
 
-function saveMember() {
+async function saveMember() {
   if (!memberDraft.name.trim()) return;
+  try {
+    const payload = {
+      name: memberDraft.name,
+      relation: memberDraft.relation,
+      gender: memberDraft.gender,
+      age: memberDraft.age,
+      tags: memberDraft.tags
+    };
 
-  if (editingMemberId.value === "new") {
-    const m = clone(memberDraft);
-    m.id = safeUUID();
-    members.push(m);
-  } else {
-    const idx = members.findIndex(x => x.id === editingMemberId.value);
-    if (idx >= 0) members[idx] = clone(memberDraft);
+    if (editingMemberId.value === "new") {
+      const res = await apiPost('/members', payload);
+      members.value.unshift(res);
+    } else {
+      await apiRequest('PUT', `/members/${editingMemberId.value}`, payload);
+      const idx = members.value.findIndex(x => x.id === editingMemberId.value);
+      if (idx >= 0) members.value[idx] = clone(memberDraft);
+    }
+    memberDialog.value = false;
+  } catch (e) {
+    alert("操作失败");
   }
-
-  saveState();
-  memberDialog.value = false;
 }
 
-function removeMember(id) {
-  if (id === "self") return;
-  const idx = members.findIndex(x => x.id === id);
-  if (idx >= 0) members.splice(idx, 1);
-  saveState();
+async function removeMember(id) {
+  // 1. 弹窗确认，防止误点
+  if (!confirm("确定要删除这位家庭成员吗？")) return;
+
+  try {
+    // 2. 发起请求
+    const resp = await fetch(`http://127.0.0.1:8000/api/members/${id}`, {
+      method: 'DELETE',
+      headers: { 
+        "Authorization": `Bearer ${getToken()}` 
+      }
+    });
+
+    // 3. 处理结果
+    if (resp.ok) {
+      // 成功了：直接从当前列表里把这行数据滤掉，界面立刻就变了
+      members.value = members.value.filter(m => m.id !== id);
+      console.log("删除成功");
+    } else {
+      // 失败了（比如点到了本人）：弹出后端给的错误提示
+      const err = await resp.json();
+      alert(err.detail || "删除操作失败");
+    }
+  } catch (e) {
+    alert("网络开小差了，请稍后再试");
+  }
 }
 </script>
 
@@ -548,6 +617,10 @@ function removeMember(id) {
   border: 1px solid #e7efef;
   border-radius: 14px;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: 500px; /* 设置一个固定最大高度，你可以根据需要调整 */
+  padding: 0 !important; /* 清除原有 padding，由内部容器控制 */
 }
 
 /* kv展示 */
@@ -563,6 +636,11 @@ function removeMember(id) {
 .v{ font-size: 13px; color:#123; }
 
 /* 表单 */
+.form-body {
+  flex: 1;
+  overflow-y: auto; /* 开启垂直滚动 */
+  padding: 15px;    /* 把内边距还给滚动区 */
+}
 .form{ display:grid; gap: 10px; }
 .field .label{ font-size: 12px; color:#6b7f7f; margin-bottom: 6px; }
 .input{
@@ -574,6 +652,8 @@ function removeMember(id) {
   font-size: 13px;
   outline: none;
   background: #fff;
+  resize: none;      
+  overflow-y: auto;
 }
 .input:focus{ border-color: rgba(23,162,162,.6); }
 .grid2{

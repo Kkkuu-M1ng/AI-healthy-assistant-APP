@@ -14,7 +14,23 @@ class MemberCreate(BaseModel):
     relation: str
     gender: str | None = None
     age: int | None = None
+    height: float | None = None 
+    weight: float | None = None 
     tags: list[str] = []
+    allergies: str | None = None 
+    meds: str | None = None      
+
+# 2. 新增 MemberUpdate (用于编辑，所有字段都是选填)
+class MemberUpdate(BaseModel):
+    name: str | None = None
+    relation: str | None = None
+    gender: str | None = None
+    age: int | None = None
+    height: float | None = None # 🆕
+    weight: float | None = None # 🆕
+    tags: list[str] | None = None
+    allergies: str | None = None # 🆕
+    meds: str | None = None      # 🆕
 
 class MemberOut(BaseModel):
     id: int
@@ -22,7 +38,11 @@ class MemberOut(BaseModel):
     relation: str
     gender: str | None = None
     age: int | None = None
+    height: float | None = None # 🆕
+    weight: float | None = None # 🆕
     tags: list[str] = []
+    allergies: str | None = None # 🆕
+    meds: str | None = None      # 🆕
 
 def dump_tags(tags: list[str]) -> str:
     return json.dumps(tags, ensure_ascii=False)
@@ -49,6 +69,10 @@ def list_members(
             relation=m.relation,
             gender=m.gender,
             age=m.age,
+            height=m.height,   # 🆕 记得加上这几行
+            weight=m.weight,   # 🆕
+            allergies=m.allergies, # 🆕
+            meds=m.meds,       # 🆕
             tags=load_tags(m.tags_json),
         )
         for m in rows
@@ -66,6 +90,10 @@ def create_member(
         relation=data.relation,
         gender=data.gender,
         age=data.age,
+        height=data.height,   # 🆕
+        weight=data.weight,   # 🆕
+        allergies=data.allergies, # 🆕
+        meds=data.meds,       # 🆕
         tags_json=dump_tags(data.tags),
     )
     session.add(m)
@@ -78,5 +106,53 @@ def create_member(
         relation=m.relation,
         gender=m.gender,
         age=m.age,
+        height=m.height,   # 🆕
+        weight=m.weight,   # 🆕
+        allergies=m.allergies, # 🆕
+        meds=m.meds,       # 🆕
         tags=load_tags(m.tags_json),
     )
+
+# 更新成员信息
+@router.put("/members/{member_id}")
+def update_member(
+    member_id: int,
+    data: MemberUpdate,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_user_id),
+):
+    member = session.get(FamilyMember, member_id)
+    if not member or member.user_id != uid:
+        raise HTTPException(status_code=404, detail="成员不存在")
+
+    update_data = data.model_dump(exclude_unset=True)
+    
+    # 特殊处理 tags -> tags_json
+    if "tags" in update_data:
+        member.tags_json = dump_tags(update_data.pop("tags"))
+        
+    for k, v in update_data.items():
+        setattr(member, k, v)
+        
+    session.add(member)
+    session.commit()
+    return {"ok": True}
+
+# 删除成员
+@router.delete("/members/{member_id}")
+def delete_member(member_id: int, session: Session = Depends(get_session)):
+    # 1. 直接按 ID 找人
+    member = session.get(FamilyMember, member_id)
+    
+    if not member:
+        raise HTTPException(status_code=404, detail="找不到该成员")
+
+    # 2. 【核心逻辑】只看关系，如果是本人，直接拦截
+    if member.relation == "本人":
+        raise HTTPException(status_code=400, detail="本人账号无法删除")
+
+    # 3. 其他的一律删除
+    session.delete(member)
+    session.commit()
+    
+    return {"ok": True}
