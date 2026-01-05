@@ -52,13 +52,16 @@
         <!-- 展示模式 -->
         <div v-if="!editingProfile" class="card">
           <div class="kv">
-            <div class="k">昵称</div><div class="v">{{ profile.nickname || "-" }}</div>
+            <div class="k">昵称</div>
+            <div class="v">{{ profile.nickname || "-" }}</div>
           </div>
           <div class="kv">
-            <div class="k">性别</div><div class="v">{{ profile.gender || "-" }}</div>
+            <div class="k">性别</div>
+            <div class="v">{{ profile.gender || "-" }}</div>
           </div>
           <div class="kv">
-            <div class="k">年龄</div><div class="v">{{ profile.age ?? "-" }}</div>
+            <div class="k">年龄</div>
+            <div class="v">{{ profile.age ?? "-" }}</div>
           </div>
           <div class="kv">
             <div class="k">身高/体重</div>
@@ -74,86 +77,91 @@
             </div>
           </div>
           <div class="kv">
-            <div class="k">过敏史</div><div class="v">{{ profile.allergies || "-" }}</div>
+            <div class="k">过敏史</div>
+            <div class="v">{{ profile.allergies || "-" }}</div>
           </div>
           <div class="kv">
-            <div class="k">常用药</div><div class="v">{{ profile.meds || "-" }}</div>
+            <div class="k">常用药</div>
+            <div class="v">{{ profile.meds || "-" }}</div>
           </div>
         </div>
 
         <!-- 编辑模式（尽量短：更多字段建议你后面放“更多/展开”） -->
         <div v-else class="card">
           <div class="form-body">
-          <div class="form">
-            <label class="field">
-              <div class="label">昵称</div>
-              <input v-model.trim="profileDraft.nickname" class="input" placeholder="例如：小明" />
-            </label>
-
-            <div class="grid2">
+            <div class="form">
               <label class="field">
-                <div class="label">性别</div>
-                <select v-model="profileDraft.gender" class="input">
-                  <option value="">请选择</option>
-                  <option value="男">男</option>
-                  <option value="女">女</option>
-                  <option value="其他">其他</option>
-                </select>
+                <div class="label">昵称</div>
+                <input v-model.trim="profileDraft.nickname" class="input" placeholder="例如：小明" />
               </label>
 
-              <label class="field">
-                <div class="label">年龄</div>
-                <input v-model.number="profileDraft.age" type="number" class="input" min="0" max="120" />
-              </label>
-            </div>
+              <div class="grid2">
+                <label class="field">
+                  <div class="label">性别</div>
+                  <select v-model="profileDraft.gender" class="input">
+                    <option value="">请选择</option>
+                    <option value="男">男</option>
+                    <option value="女">女</option>
+                    <option value="其他">其他</option>
+                  </select>
+                </label>
 
-            <div class="grid2">
-              <label class="field">
-                <div class="label">身高(cm)</div>
-                <input v-model.number="profileDraft.height" type="number" class="input" min="0" max="250" />
-              </label>
-
-              <label class="field">
-                <div class="label">体重(kg)</div>
-                <input v-model.number="profileDraft.weight" type="number" class="input" min="0" max="300" />
-              </label>
-            </div>
-
-            <div class="field">
-              <div class="label">慢病标签</div>
-              <div class="chips">
-                <span v-for="t in profileDraft.chronicTags" :key="t" class="chip">
-                  {{ t }}
-                  <span class="x" @click="removeTag(profileDraft.chronicTags, t)">×</span>
-                </span>
+                <label class="field">
+                  <div class="label">年龄</div>
+                  <input v-model.number="profileDraft.age" type="number" class="input" min="0" max="120" />
+                </label>
               </div>
-              <div class="tag-add">
-                <input v-model.trim="tagInput" class="input" placeholder="输入标签回车或点添加" @keydown.enter.prevent="addProfileTag" />
-                <button class="btn" @click="addProfileTag">添加</button>
+
+              <div class="grid2">
+                <label class="field">
+                  <div class="label">身高(cm)</div>
+                  <input v-model.number="profileDraft.height" type="number" class="input" min="0" max="250" />
+                </label>
+
+                <label class="field">
+                  <div class="label">体重(kg)</div>
+                  <input v-model.number="profileDraft.weight" type="number" class="input" min="0" max="300" />
+                </label>
               </div>
-              <div class="preset">
-                <button v-for="t in chronicPreset" :key="t" class="pill" @click="quickAddTag(profileDraft.chronicTags, t)">
-                  {{ t }}
-                </button>
+
+              <div class="field">
+                <div class="label">慢病标签</div>
+                <div class="chips">
+                  <span v-for="t in profileDraft.chronicTags" :key="t" class="chip">
+                    {{ t }}
+                    <span class="x" @click="removeTag(profileDraft.chronicTags, t)">×</span>
+                  </span>
+                </div>
+                <div class="tag-add">
+                  <input v-model.trim="tagInput" class="input" placeholder="输入标签回车或点添加"
+                    @keydown.enter.prevent="addProfileTag" />
+                  <button class="btn" @click="addProfileTag">添加</button>
+                </div>
+                <div class="preset">
+                  <button v-for="t in chronicPreset" :key="t" class="pill"
+                    @click="quickAddTag(profileDraft.chronicTags, t)">
+                    {{ t }}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <label class="field">
-              <div class="label">过敏史</div>
-              <textarea v-model.trim="profileDraft.allergies" class="input" rows="2" placeholder="例如：青霉素过敏"></textarea>
-            </label>
+              <label class="field">
+                <div class="label">过敏史</div>
+                <textarea v-model.trim="profileDraft.allergies" class="input" rows="2"
+                  placeholder="例如：青霉素过敏"></textarea>
+              </label>
 
-            <label class="field">
-              <div class="label">常用药</div>
-              <textarea v-model.trim="profileDraft.meds" class="input" rows="2" placeholder="例如：氨氯地平"></textarea>
-            </label>
+              <label class="field">
+                <div class="label">常用药</div>
+                <textarea v-model.trim="profileDraft.meds" class="input" rows="2" placeholder="例如：氨氯地平"></textarea>
+              </label>
 
-            <div class="actions">
-              <button class="btn ghost" @click="cancelEditProfile">取消</button>
-              <button class="btn primary" @click="saveProfile">保存</button>
+              <div class="actions">
+                <button class="btn ghost" @click="cancelEditProfile">取消</button>
+                <button class="btn primary" @click="saveProfile">保存</button>
+              </div>
             </div>
           </div>
-        </div>
         </div>
       </div>
 
@@ -165,28 +173,28 @@
         </div>
 
         <div class="members-scroll">
-          <div v-for="m in members" :key="m.id" class="member-card">
+          <div v-for="m in familyMembersOnly" :key="m.id" class="member-card">
             <div class="member-top">
-              <div class="member-title">{{ m.relation }}｜{{ m.name }}</div>
+              <div class="member-title">{{ m.relation }}｜{{ m.name }}
+                <span class="sub-info">({{ m.gender || '?' }} · {{ m.age || '0' }}岁)</span>
+              </div>
               <div class="member-actions">
                 <button class="btn link" @click="openMember(m.id)">编辑</button>
-                <button class="btn link danger" :disabled="m.id==='self'" @click="removeMember(m.id)">删除</button>
+                <button class="btn link danger" :disabled="m.id === 'self'" @click="removeMember(m.id)">删除</button>
               </div>
             </div>
 
-            <div class="member-meta">
-              <span v-if="m.gender">{{ m.gender }}</span>
-              <span v-if="m.age"> · {{ m.age }}岁</span>
-            </div>
-
-            <div class="chips" v-if="m.tags.length" style="margin-top:8px;">
-              <span v-for="t in m.tags" :key="t" class="chip">{{ t }}</span>
+            <div class="chips" v-if="m.tags && Object.keys(m.tags).length" style="margin-top:8px;">
+              <!-- 注意：现在的 m.tags 是个对象，所以用 (val, key) 的写法 -->
+              <span v-for="(val, key) in m.tags" :key="key" class="chip">
+                {{ key }} <span class="lv-tag">L{{ val.level }}</span>
+              </span>
             </div>
 
             <div v-if="m.notes" class="notes">{{ m.notes }}</div>
           </div>
 
-          <div v-if="members.length <= 1" class="empty">
+          <div v-if="familyMembersOnly.length === 0" class="empty">
             还没有添加家庭成员，点击右上角 “新增成员”
           </div>
         </div>
@@ -235,7 +243,8 @@
                 </span>
               </div>
               <div class="tag-add">
-                <input v-model.trim="memberTagInput" class="input" placeholder="输入标签回车或点添加" @keydown.enter.prevent="addMemberTag" />
+                <input v-model.trim="memberTagInput" class="input" placeholder="输入标签回车或点添加"
+                  @keydown.enter.prevent="addMemberTag" />
                 <button class="btn" @click="addMemberTag">添加</button>
               </div>
               <div class="preset">
@@ -266,19 +275,19 @@
 
 <script setup>
 import { computed, reactive, ref, onMounted } from "vue";
-import PageShell from "../components/PageShell.vue"; 
-import { apiGet, apiPost, getToken } from "../api/http"; 
+import PageShell from "../components/PageShell.vue";
+import { apiGet, apiPost, getToken } from "../api/http";
 
 // ====== localStorage store（写在组件内，避免你额外建文件）======
 const LS_KEY = "ai_family_doc_v1";
-const API_BASE = "http://127.0.0.1:8000/api"; 
+const API_BASE = "http://127.0.0.1:8000/api";
 
 async function apiRequest(method, path, body) {
   const resp = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${getToken()}` 
+      "Authorization": `Bearer ${getToken()}`
     },
     body: JSON.stringify(body)
   });
@@ -325,7 +334,7 @@ async function initData() {
       profile.age = self.age;
       profile.height = self.height;
       profile.weight = self.weight;
-      profile.chronicTags = self.tags || [];
+      profile.chronicTags = self.tags ? Object.keys(self.tags) : [];
       profile.allergies = self.allergies || "";
       profile.meds = self.meds || "";
     }
@@ -395,10 +404,10 @@ async function saveProfile() {
       allergies: profileDraft.allergies,
       meds: profileDraft.meds
     };
-    
+
     // 调用后端的 PUT 接口更新“本人”档案
     await apiRequest('PUT', `/members/${profile.memberId}`, payload);
-    
+
     // 更新本地显示
     Object.assign(profile, clone(profileDraft));
     editingProfile.value = false;
@@ -416,11 +425,21 @@ async function copyText(text) {
 }
 
 // ====== 标签工具 ======
-const chronicPreset = ["高血压","糖尿病","高血脂","痛风","哮喘","冠心病","胃炎","肥胖","焦虑/抑郁"];
+const chronicPreset = ["高血压", "糖尿病", "高血脂", "痛风", "哮喘", "冠心病", "胃炎", "肥胖", "焦虑/抑郁"];
 const tagInput = ref("");
+
+const familyMembersOnly = computed(() => {
+  // 过滤掉关系为“本人”的成员，只留下真正的家属
+  return members.value.filter(m => m.relation !== '本人');
+});
 
 function quickAddTag(arr, t) {
   if (!t) return;
+  // 确保传入的是数组，如果因为某种原因变成了对象，这里强制初始化
+  if (!Array.isArray(arr)) {
+    console.error("标签容器不是数组，正在初始化...");
+    return;
+  }
   if (!arr.includes(t)) arr.push(t);
 }
 
@@ -437,7 +456,7 @@ function addProfileTag() {
 }
 
 // ====== 成员管理 ======
-const relationPreset = ["父亲","母亲","丈夫","妻子","孩子","爷爷","奶奶"];
+const relationPreset = ["父亲", "母亲", "丈夫", "妻子", "孩子", "爷爷", "奶奶"];
 
 const memberDialog = ref(false);
 const memberDialogTitle = ref("新增成员");
@@ -461,14 +480,27 @@ function openMember(id) {
 
   if (id === "new") {
     memberDialogTitle.value = "新增成员";
-    Object.assign(memberDraft, { id: "", name: "", relation: "父亲", gender: "", age: null, tags: [], notes: "" });
+    // 初始化空数据
+    Object.assign(memberDraft, {
+      name: "", relation: "父亲", gender: "", age: null,
+      height: null, weight: null, allergies: "", meds: "", tags: []
+    });
   } else {
     memberDialogTitle.value = "编辑成员";
-    const m = members.find(x => x.id === id);
+    // 从当前的 members 列表里找到对应的成员对象
+    const m = members.value.find(x => x.id === id);
     if (!m) return;
-    Object.assign(memberDraft, clone(m));
-  }
 
+    // 【核心关键】：把 m 里的所有属性克隆给 memberDraft
+    // 只要 m 里面有 height/weight，memberDraft 就会跟着有
+    Object.assign(memberDraft, clone(m));
+
+    // 特殊处理标签：后端传回来的是对象 {"高血压":{...}}，
+    // 但前端编辑组件需要的是数组 ["高血压"]，所以我们要转一下
+    if (m.tags && !Array.isArray(m.tags)) {
+      memberDraft.tags = Object.keys(m.tags);
+    }
+  }
   memberTagInput.value = "";
 }
 
@@ -516,8 +548,8 @@ async function removeMember(id) {
     // 2. 发起请求
     const resp = await fetch(`http://127.0.0.1:8000/api/members/${id}`, {
       method: 'DELETE',
-      headers: { 
-        "Authorization": `Bearer ${getToken()}` 
+      headers: {
+        "Authorization": `Bearer ${getToken()}`
       }
     });
 
@@ -539,111 +571,190 @@ async function removeMember(id) {
 
 <style scoped>
 /* ✅ 不改 PageShell：我在页面内部做安全区与布局控制 */
-.me-page{
+.me-page {
   height: 100%;
   box-sizing: border-box;
   padding: 14px 0 0;
-  overflow: hidden;     /* 整页不滚动 */
-  overflow-x: hidden;   /* ✅ 禁止左右滑动 */
+  overflow: hidden;
+  /* 整页不滚动 */
+  overflow-x: hidden;
+  /* ✅ 禁止左右滑动 */
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 12px;
 }
 
 /* 顶部 */
-.hero{
+.hero {
   padding: 14px;
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(23,162,162,.16), rgba(16,185,129,.10));
-  border: 1px solid rgba(0,0,0,.05);
+  background: linear-gradient(135deg, rgba(23, 162, 162, .16), rgba(16, 185, 129, .10));
+  border: 1px solid rgba(0, 0, 0, .05);
   display: grid;
   grid-template-columns: 76px 1fr;
   gap: 12px;
   margin-left: 8px;
   margin-right: 8px;
 }
-.avatar{
-  width: 76px; height: 76px;
+
+.avatar {
+  width: 76px;
+  height: 76px;
   border-radius: 18px;
   overflow: hidden;
-  background: rgba(255,255,255,.85);
-  border: 1px solid rgba(0,0,0,.06);
+  background: rgba(255, 255, 255, .85);
+  border: 1px solid rgba(0, 0, 0, .06);
   display: grid;
   place-items: center;
 }
-.avatar img{ width:100%; height:100%; object-fit: cover; }
-.avatar-fallback{ font-size: 28px; font-weight: 900; color:#0f3d3d; }
 
-.hero-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-.name{ font-size: 18px; font-weight: 900; color:#0f1f1f; }
-.id-row{ margin-top: 4px; display:flex; align-items:center; gap:8px; font-size: 12px; color:#506363; }
-.meta{ margin-top: 8px; display:flex; flex-wrap:wrap; gap:6px; }
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
-.progress-card{
+.avatar-fallback {
+  font-size: 28px;
+  font-weight: 900;
+  color: #0f3d3d;
+}
+
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.name {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f1f1f;
+}
+
+.id-row {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #506363;
+}
+
+.meta {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.progress-card {
   margin-top: 10px;
   padding: 10px;
   border-radius: 12px;
-  background: rgba(255,255,255,.65);
-  border: 1px solid rgba(0,0,0,.04);
+  background: rgba(255, 255, 255, .65);
+  border: 1px solid rgba(0, 0, 0, .04);
 }
-.progress-head{ display:flex; justify-content:space-between; font-size:12px; color:#1e2d2d; margin-bottom: 6px; }
-.progress-bar{
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #1e2d2d;
+  margin-bottom: 6px;
+}
+
+.progress-bar {
   height: 10px;
   border-radius: 999px;
-  background: rgba(0,0,0,.08);
+  background: rgba(0, 0, 0, .08);
   overflow: hidden;
 }
-.progress-fill{
+
+.progress-fill {
   height: 100%;
   border-radius: 999px;
   background: #17a2a2;
 }
-.tip{ margin-top: 6px; font-size: 12px; color:#4f6464; }
+
+.tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #4f6464;
+}
 
 /* 区块 */
-.block{
+.block {
   margin-left: 8px;
   margin-right: 8px;
 }
-.block-title{
+
+.block-title {
   margin: 4px 0 10px;
   font-size: 14px;
   font-weight: 900;
-  color:#123;
+  color: #123;
   margin-left: 20px;
 }
-.card{
-  background:#fff;
+
+.card {
+  background: #fff;
   border: 1px solid #e7efef;
   border-radius: 14px;
   padding: 12px;
   display: flex;
   flex-direction: column;
-  max-height: 500px; /* 设置一个固定最大高度，你可以根据需要调整 */
-  padding: 0 !important; /* 清除原有 padding，由内部容器控制 */
+  max-height: 500px;
+  /* 设置一个固定最大高度，你可以根据需要调整 */
+  padding: 0 !important;
+  /* 清除原有 padding，由内部容器控制 */
 }
 
 /* kv展示 */
-.kv{
-  display:grid;
+.kv {
+  display: grid;
   grid-template-columns: 84px 1fr;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px dashed rgba(0,0,0,.06);
+  border-bottom: 1px dashed rgba(0, 0, 0, .06);
 }
-.kv:last-child{ border-bottom: none; }
-.k{ font-size: 12px; color:#6b7f7f; }
-.v{ font-size: 13px; color:#123; }
+
+.kv:last-child {
+  border-bottom: none;
+}
+
+.k {
+  font-size: 12px;
+  color: #6b7f7f;
+}
+
+.v {
+  font-size: 13px;
+  color: #123;
+}
 
 /* 表单 */
 .form-body {
   flex: 1;
-  overflow-y: auto; /* 开启垂直滚动 */
-  padding: 15px;    /* 把内边距还给滚动区 */
+  overflow-y: auto;
+  /* 开启垂直滚动 */
+  padding: 15px;
+  /* 把内边距还给滚动区 */
 }
-.form{ display:grid; gap: 10px; }
-.field .label{ font-size: 12px; color:#6b7f7f; margin-bottom: 6px; }
-.input{
+
+.form {
+  display: grid;
+  gap: 10px;
+}
+
+.field .label {
+  font-size: 12px;
+  color: #6b7f7f;
+  margin-bottom: 6px;
+}
+
+.input {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #e7efef;
@@ -652,144 +763,243 @@ async function removeMember(id) {
   font-size: 13px;
   outline: none;
   background: #fff;
-  resize: none;      
+  resize: none;
   overflow-y: auto;
 }
-.input:focus{ border-color: rgba(23,162,162,.6); }
-.grid2{
-  display:grid;
+
+.input:focus {
+  border-color: rgba(23, 162, 162, .6);
+}
+
+.grid2 {
+  display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
-.actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 4px; }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
 
 /* 成员区：占剩余空间 + 内部滚动 */
-.members-block{
+.members-block {
   min-height: 0;
-  display:grid;
+  display: grid;
   grid-template-rows: auto 1fr;
   gap: 10px;
 }
-.members-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
+
+.members-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
-.members-scroll{
+
+.members-scroll {
   min-height: 0;
-  overflow-y: auto;    /* 只滚成员列表 */
-  overflow-x: hidden;  /* ✅ 禁止左右滑 */
-  display:grid;
+  overflow-y: auto;
+  /* 只滚成员列表 */
+  overflow-x: hidden;
+  /* ✅ 禁止左右滑 */
+  display: grid;
   gap: 10px;
-  padding-right: 2px; /* 防止滚动条遮一点点 */
+  padding-right: 2px;
+  /* 防止滚动条遮一点点 */
 }
-.member-card{
-  background:#fff;
+
+.member-card {
+  background: #fff;
   border: 1px solid #e7efef;
   border-radius: 14px;
   padding: 12px;
 }
-.member-top{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
-.member-title{ font-weight: 900; color:#123; font-size: 14px; }
-.member-meta{ margin-top: 6px; font-size: 12px; color:#607575; }
-.notes{ margin-top: 8px; font-size: 12px; color:#2a3c3c; }
+
+.member-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-title {
+  font-weight: 900;
+  color: #123;
+  font-size: 14px;
+}
+
+/* 姓名旁边的副信息 */
+.sub-info {
+  font-size: 12px;
+  color: #8a9999;
+  font-weight: normal;
+  margin-left: 6px;
+}
+
+/* 标签里的等级文字 */
+.lv-tag {
+  font-size: 10px;
+  background: #17a2a2;
+  color: #fff;
+  padding: 0 4px;
+  border-radius: 4px;
+  margin-left: 4px;
+  font-weight: bold;
+}
+
+.notes {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #2a3c3c;
+}
 
 /* Chip */
-.chip{
-  display:inline-flex;
-  align-items:center;
+.chip {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
   padding: 4px 8px;
   border-radius: 999px;
   font-size: 12px;
-  border: 1px solid rgba(0,0,0,.08);
-  background: rgba(255,255,255,.65);
-  color:#123;
+  border: 1px solid rgba(0, 0, 0, .08);
+  background: rgba(255, 255, 255, .65);
+  color: #123;
 }
-.chip.dim{ color:#516666; }
-.chips{ display:flex; flex-wrap:wrap; gap: 6px; }
-.x{ cursor:pointer; opacity:.7; font-weight: 900; }
-.x:hover{ opacity:1; }
+
+.chip.dim {
+  color: #516666;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.x {
+  cursor: pointer;
+  opacity: .7;
+  font-weight: 900;
+}
+
+.x:hover {
+  opacity: 1;
+}
 
 /* Tag 添加 */
-.tag-add{ display:grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 8px; }
-.preset{ display:flex; flex-wrap:wrap; gap: 6px; margin-top: 8px; }
-.pill{
-  border: 1px dashed rgba(0,0,0,.18);
+.tag-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.preset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pill {
+  border: 1px dashed rgba(0, 0, 0, .18);
   background: transparent;
-  color:#275;
+  color: #275;
   border-radius: 999px;
   padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
 }
-.pill:hover{ border-style: solid; }
+
+.pill:hover {
+  border-style: solid;
+}
 
 /* 按钮 */
-.btn{
-  border: 1px solid rgba(0,0,0,.08);
+.btn {
+  border: 1px solid rgba(0, 0, 0, .08);
   background: #fff;
   border-radius: 12px;
   padding: 8px 10px;
   font-size: 12px;
   cursor: pointer;
 }
-.btn.primary{
+
+.btn.primary {
   background: #17a2a2;
   border-color: #17a2a2;
   color: #fff;
   font-weight: 800;
 }
-.btn.ghost{
-  background: rgba(255,255,255,.65);
+
+.btn.ghost {
+  background: rgba(255, 255, 255, .65);
 }
-.btn.link{
+
+.btn.link {
   border: none;
   background: transparent;
   padding: 6px 6px;
   color: #17a2a2;
   font-weight: 800;
 }
-.btn.link.danger{ color:#e23b3b; }
-.btn:disabled{ opacity:.45; cursor:not-allowed; }
 
-.muted{ color:#6b7f7f; }
+.btn.link.danger {
+  color: #e23b3b;
+}
+
+.btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.muted {
+  color: #6b7f7f;
+}
 
 /* 弹窗 */
-.mask{
+.mask {
   position: absolute;
-  left: 0; top: 0; right: 0; bottom: 64px; /* 不盖住 tabbar */
-  background: rgba(0,0,0,.35);
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 64px;
+  /* 不盖住 tabbar */
+  background: rgba(0, 0, 0, .35);
   display: grid;
   place-items: center;
   z-index: 50;
 }
-.dialog{
+
+.dialog {
   width: 92%;
   max-height: 86%;
   overflow: auto;
   background: #fff;
   border-radius: 16px;
-  border: 1px solid rgba(0,0,0,.08);
+  border: 1px solid rgba(0, 0, 0, .08);
   padding: 14px;
   box-sizing: border-box;
 }
-.dialog-title{
+
+.dialog-title {
   font-size: 14px;
   font-weight: 900;
-  color:#123;
+  color: #123;
   margin-bottom: 10px;
 }
 
-.empty{
-  text-align:center;
-  color:#6b7f7f;
+.empty {
+  text-align: center;
+  color: #6b7f7f;
   font-size: 12px;
   padding: 14px 0;
 }
 
 /* ✅ 底部安全区：避免内容被 tabbar 压住（不改 PageShell） */
-.safe-bottom{
+.safe-bottom {
   height: 72px;
 }
 </style>

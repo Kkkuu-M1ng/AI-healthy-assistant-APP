@@ -16,7 +16,7 @@ class MemberCreate(BaseModel):
     age: int | None = None
     height: float | None = None 
     weight: float | None = None 
-    tags: list[str] = []
+    tags: list[str] | dict[str, dict] | None = None
     allergies: str | None = None 
     meds: str | None = None      
 
@@ -28,7 +28,7 @@ class MemberUpdate(BaseModel):
     age: int | None = None
     height: float | None = None # 🆕
     weight: float | None = None # 🆕
-    tags: list[str] | None = None
+    tags: list[str] | dict[str, dict] | None = None
     allergies: str | None = None # 🆕
     meds: str | None = None      # 🆕
 
@@ -40,18 +40,34 @@ class MemberOut(BaseModel):
     age: int | None = None
     height: float | None = None # 🆕
     weight: float | None = None # 🆕
-    tags: list[str] = []
+    tags: dict[str, dict] = {}
     allergies: str | None = None # 🆕
     meds: str | None = None      # 🆕
 
 def dump_tags(tags: list[str]) -> str:
+    # 如果前端传的是原来的列表格式 ['高血压', '肥胖']
+    if isinstance(tags, list):
+        # 自动为每个标签初始化：Level 2 (确诊), Score 100 (起始风险满分)
+        structured_data = {
+            tag: {"level": 2, "score": 100} for tag in tags
+        }
+        return json.dumps(structured_data, ensure_ascii=False)
+    
+    # 如果已经是字典格式了，直接存
     return json.dumps(tags, ensure_ascii=False)
 
 def load_tags(s: str) -> list[str]:
     try:
-        return json.loads(s) if s else []
+        data = json.loads(s) if s else {}
+        
+        # 核心兼容逻辑：如果读出来还是旧的列表格式 ['高血压']
+        if isinstance(data, list):
+            # 瞬间把它升级为新格式返回给前端
+            return {tag: {"level": 2, "score": 100} for tag in data}
+            
+        return data
     except Exception:
-        return []
+        return {}
 
 @router.get("/members", response_model=list[MemberOut])
 def list_members(

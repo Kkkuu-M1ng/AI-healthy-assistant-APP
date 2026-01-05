@@ -39,6 +39,15 @@ export async function apiGet(path) {
   });
 
   if (!resp.ok) {
+    // 👇👇👇 新增：自动修复逻辑 👇👇👇
+    if (resp.status === 401) {
+      console.warn("检测到 Token 失效，正在自动清理并重启...");
+      localStorage.removeItem("ai_token"); // 删掉僵尸 Token
+      location.reload(); // 刷新页面，触发 devLoginIfNeeded 重新领钥匙
+      return;
+    }
+    // 👆👆👆👆👆👆👆👆👆👆👆👆
+
     const text = await resp.text().catch(() => "");
     throw new Error(`GET ${path} 失败：${resp.status} ${text}`);
   }
@@ -58,8 +67,17 @@ export async function apiPost(path, body) {
   });
 
   if (!resp.ok) {
+    // 👇👇👇 新增：自动修复逻辑 👇👇👇
+    if (resp.status === 401) {
+      console.warn("检测到 Token 失效，正在自动清理并重启...");
+      localStorage.removeItem("ai_token"); // 删掉僵尸 Token
+      location.reload(); // 刷新页面，触发 devLoginIfNeeded 重新领钥匙
+      return;
+    }
+    // 👆👆👆👆👆👆👆👆👆👆👆👆
+
     const text = await resp.text().catch(() => "");
-    throw new Error(`POST ${path} 失败：${resp.status} ${text}`);
+    throw new Error(`GET ${path} 失败：${resp.status} ${text}`);
   }
   return resp.json();
 }
