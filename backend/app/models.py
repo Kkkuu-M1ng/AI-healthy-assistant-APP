@@ -74,9 +74,8 @@ class ConsultSession(SQLModel, table=True):
     问诊会话表：代表一次完整的问诊记录（比如“1月5日关于发烧的咨询”）
     """
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(index=True)
-    
-    # 记录创建时间
+    user_id: int = Field(index=True)   # 对应 User.id
+    member_id: int = Field(index=True) # 对应 FamilyMember.id 👈 指向具体的家属
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ChatMessage(SQLModel, table=True):

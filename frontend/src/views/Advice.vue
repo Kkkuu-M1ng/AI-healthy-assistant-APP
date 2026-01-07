@@ -61,6 +61,8 @@ import { useRouter } from "vue-router";
 import PageShell from "../components/PageShell.vue";
 import { apiGet } from "../api/http";
 
+const LS_MEMBER_KEY = "active_member_id";
+
 const router = useRouter();
 
 const members = ref([]);
@@ -76,11 +78,6 @@ const activeMember = computed(() => {
   return members.value.find(m => m.id === activeMemberId.value) || members.value[0] || null;
 });
 
-async function loadMembers() {
-  members.value = await apiGet("/members");
-  activeMemberId.value = members.value[0]?.id ?? null;
-}
-
 async function loadListsByMember() {
   if (!activeMemberId.value) {
     adviceList.value = [];
@@ -95,6 +92,33 @@ async function loadListsByMember() {
   adviceList.value = advice;
   taskList.value = tasks;
 }
+
+async function loadMembers() {
+  const res = await apiGet("/members");
+  members.value = res;
+
+  // 💡 重点：同步首页的选中状态
+  const savedId = localStorage.getItem(LS_MEMBER_KEY);
+  
+  if (savedId && res.find(m => m.id == savedId)) {
+    activeMemberId.value = parseInt(savedId);
+  } else {
+    activeMemberId.value = res[0]?.id ?? null;
+  }
+}
+
+// 2. 同样的，建议页切换了成员，也要同步回小本子
+watch(activeMemberId, async (newId) => {
+  if (newId) {
+    localStorage.setItem(LS_MEMBER_KEY, newId); // 记录同步
+    loading.value = true;
+    try {
+      await loadListsByMember();
+    } finally {
+      loading.value = false;
+    }
+  }
+});
 
 onMounted(async () => {
   loading.value = true;

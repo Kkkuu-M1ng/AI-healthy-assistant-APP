@@ -151,14 +151,82 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref } from "vue";
 import PageShell from "../components/PageShell.vue"; 
 import { apiPost } from '../api/http'; 
 
+const LS_MEMBER_KEY = "active_member_id";
+
+onMounted(async () => {
+  const mid = localStorage.getItem("active_member_id") || 1; 
+ 
+  try {
+    console.log(`正在为成员 ID: ${mid} 开启专属问诊室...`);
+    
+    // 3. 【核心连接】告诉后端：这次聊天是为 ID 为 mid 的那个人聊的
+    const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
+    
+    // 拿到这次会话的 ID
+    currentSessionId.value = res.id;
+    
+    // ... 后续逻辑
+  } catch (e) {
+    console.error("问诊室开启失败", e);
+  }
+});
+
+onMounted(async () => {
+  console.log("检测到进入问诊页，正在准备新的问诊环境...");
+  
+  // 1. 强制开启一个全新的会话
+  await startFreshSession();
+  
+  // 2. 之前的监听和安全区逻辑保持不变
+  window.addEventListener("click", onGlobalClick);
+  scrollToBottom();
+});
+
+async function startFreshSession() {
+  loading.value = true;
+  try {
+    // 1. 获取当前选中的成员（确保知道是为谁看病）
+    const mid = localStorage.getItem("active_member_id") || 1;
+    
+    // 2. 核心：向后端请求一个新的会话 ID
+    // 每次刷新或进入，后端都会在 ConsultSession 表里产生一条新记录
+    const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
+    
+    // 3. 在前端创建一个全新的 session 对象
+    const newSessId = uid(); // 前端用的唯一标识
+    const s = {
+      id: newSessId,
+      serverId: res.id, // 👈 存入后端刚给的新 ID
+      mode: mode.value,
+      title: `问诊 ${sessions.value.length + 1}`,
+      updatedAt: nowDateTime(),
+      preview: "（新问诊）",
+      messages: defaultWelcomeMessages(), // 只加载欢迎语，不加载历史
+    };
+
+    // 4. 把新会话塞进列表最前面，并设为当前活跃会话
+    sessions.value.unshift(s);
+    currentSessionId.value = newSessId;
+    
+    // 5. 持久化到本地，防止刷新丢了
+    saveSessions();
+    
+    console.log("✨ 专属问诊室已开启，后端ID:", res.id);
+  } catch (e) {
+    console.error("开启新问诊失败", e);
+    alert("无法开启问诊，请检查网络");
+  } finally {
+    loading.value = false;
+  }
+}
+
 /** ============ 配置：四类模式 ============ */
 const modes = [
-  { key: "common", label: "常用", ico: "💬" },
-  { key: "child", label: "儿童", ico: "🧒" },
-  { key: "pregnant", label: "孕妇", ico: "🤰" },
-  { key: "elder", label: "老年", ico: "👴" },
+  { key: "common", label: "常用", ico: "💬", prompt: "你是全科医生..." }, 
+  { key: "child", label: "儿童", ico: "🧒", prompt: "你是儿科医生..." },
+  { key: "pregnant", label: "孕妇", ico: "🤰", prompt: "你是产科医生..." },
+  { key: "elder", label: "老年", ico: "👴", prompt: "你是老年医生..." },
 ];
-
 const mode = ref("common");
 
 const modeHint = computed(() => {
@@ -238,18 +306,21 @@ const currentSessionId = ref("");
 async function ensureBackendSession(session) {
   if (session.serverId) return session.serverId;
 
+  // 1. 就在这里，就在这个函数内部，给 mid 下定义
+  const mid = localStorage.getItem("active_member_id") || 1; 
+
+  console.log(`正在向后端申请成员 ${mid} 的会话ID...`);
+
   try {
-    console.log("正在向后端申请会话ID...");
-    // 假设当前用户是 user_id=1
-    const res = await apiPost('/consult/sessions?user_id=1', {});
-    session.serverId = res.id; // 把后端返回的 ID 存到本地对象里
-    saveSessions(); // 存入 localStorage，下次不用再申请
-    console.log("后端会话已建立，ID:", session.serverId);
+    // 2. 只有上面定义了 mid，下面这一行的大括号里才能认出它
+    const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
+    
+    session.serverId = res.id; 
+    saveSessions();
     return session.serverId;
   } catch (e) {
     console.error("连接后端失败:", e);
-    // 这里可以加一个 Toast 提示用户
-    return null;
+    throw e;
   }
 }
 
