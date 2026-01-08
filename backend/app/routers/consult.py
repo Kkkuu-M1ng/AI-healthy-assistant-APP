@@ -11,7 +11,7 @@ from app.db import get_session
 from app.models import ConsultSession, ChatMessage, AdviceItem, TaskItem, FamilyMember
 from app.core.auth import get_current_user_id
 # 导入刚才写的替身服务
-from app.services.llm import chat_with_ai
+from app.services.llm import chat_with_ai, summarize_session_title
 
 router = APIRouter(prefix="/consult", tags=["Consult"])
 
@@ -63,6 +63,16 @@ def get_messages(session_id: int, db: Session = Depends(get_session)):
     results = db.exec(statement).all()
     return results
 
+@router.get("/sessions")
+def list_sessions(
+    db: Session = Depends(get_session),
+    uid: int = Depends(get_current_user_id)
+):
+    # 查出当前用户所有的会话，按时间倒序排
+    statement = select(ConsultSession).where(ConsultSession.user_id == uid).order_by(ConsultSession.created_at.desc())
+    results = db.exec(statement).all()
+    return results
+
 # --------------------------
 # 3. 发送消息并获取回复 (Chat)
 # --------------------------
@@ -72,95 +82,61 @@ def chat(
     session_id: int, 
     content: str, 
     db: Session = Depends(get_session), 
-    uid: int = Depends(get_current_user_id) # 🆕 自动识别当前登录用户
+    uid: int = Depends(get_current_user_id)
 ):
-    # 1. 找到当前的问诊会话，确认它属于谁
+    # 1. 获取会话与成员画像
     session_obj = db.get(ConsultSession, session_id)
     if not session_obj or session_obj.user_id != uid:
         raise HTTPException(status_code=404, detail="会话不存在")
-    
-    # 👇👇👇 加上这两行打印，看看到底在找谁 👇👇👇
-    print(f"🔍 DEBUG: 当前登录 UserID={uid}")
-    print(f"🔍 DEBUG: 当前会话绑定的 MemberID={session_obj.member_id}")
 
-    # 2. 核心：获取这个人的“健康画像” (Persona)
-    # 假设会话中记录了 member_id，如果没有，默认取该用户的“本人”档案
-    # 我们这里做一个兼容逻辑：
-    target_member_id = getattr(session_obj, "member_id", None)
-    if not target_member_id:
-        # 兜底：去找该用户关系为“本人”的成员
-        member = db.exec(select(FamilyMember).where(FamilyMember.user_id == uid, FamilyMember.relation == "本人")).first()
-    else:
-        member = db.get(FamilyMember, target_member_id)
-
-    if not member:
-        print(f"❌ 错误：在 FamilyMember 表里找不到 ID 为 {target_member_id} 的数据！")
-        raise HTTPException(status_code=400, detail="找不到对应的健康档案，请先完善个人资料")
-
-    # 3. 准备投喂给 AI 的画像字典
+    member = db.get(FamilyMember, session_obj.member_id)
     persona_data = {
-        "gender": member.gender,
-        "age": member.age,
-        "height": member.height,
-        "weight": member.weight,
-        "tags_json": member.tags_json, # 既往病史
-        "allergies": member.allergies, # 过敏红线
-        "meds": member.meds,           # 常用药
-        "special_status": member.special_status # 特殊时期
+        "gender": member.gender, "age": member.age, "height": member.height,
+        "weight": member.weight, "tags_json": member.tags_json,
+        "allergies": member.allergies, "meds": member.meds
     }
 
-    # 4. 存入用户刚刚说的话
+    # 2. 存入用户消息
     user_msg = ChatMessage(session_id=session_id, role="user", content=content)
     db.add(user_msg)
-    db.commit()
-    
-    # 5. 查出历史记录并打包
+    db.commit() 
+
+    # 3. 查出历史记录
     history = db.exec(
         select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)
     ).all()
     payload = [{"role": m.role, "content": m.content} for m in history]
-    
-    # 6. 🚀 真正调真 AI (通义千问)
-    # 注意：我们把历史对话和刚才准备的画像数据都传进去
-    ai_result = chat_with_ai(payload, persona_data)
-    
-    # 7. 解析 AI 返回的 JSON 结果
-    reply_text = ai_result.get("reply", "抱歉，我还没想好怎么回。")
-    new_advices = ai_result.get("new_advice", [])
-    new_tasks = ai_result.get("new_tasks", [])
-    
-    # 8. 【自动化闭环】建议入库
-    for item in new_advices:
-        advice = AdviceItem(
-            user_id=uid,
-            member_id=member.id,
-            title=item.get("title", "健康建议"),
-            reason=item.get("reason", ""),
-            tags_json=json.dumps(item.get("tags", [])), # 转回 JSON 存
-            detail_json="[]"
-        )
-        db.add(advice)
-            
-    # 9. 【自动化闭环】任务入库
-    for item in new_tasks:
-        task = TaskItem(
-            user_id=uid,
-            member_id=member.id,
-            title=item.get("title", "健康任务"),
-            freq=item.get("freq", ""),
-            due=item.get("due", ""),
-            done=False,
-            detail_json="[]",
-            logs_json="[]"
-        )
-        db.add(task)
 
-    # 10. 存入 AI 的回复气泡
-    ai_msg = ChatMessage(session_id=session_id, role="assistant", content=reply_text)
+    # 4. 【核心】调用 AI 聊天（这是最优先的任务）
+    ai_reply_text = chat_with_ai(payload, persona_data)
+
+    # 5. 存入 AI 回复
+    ai_msg = ChatMessage(session_id=session_id, role="assistant", content=ai_reply_text)
     db.add(ai_msg)
     
+    # 6. 🚀 【智能起名逻辑】合并并保护
+    # 规则：如果是第一轮对话，且标题还是默认的
+    if len(history) <= 2 and session_obj.title == "新问诊会话":
+        try:
+            # 💡 关键：找到“用户描述：”后面的真正内容
+            clean_content = content
+            if "用户描述：" in content:
+                clean_content = content.split("用户描述：")[-1] # 只取后面那段
+            
+            # 调 AI 总结标题（用干净的内容）
+            chat_summary_input = f"用户问：{clean_content}\nAI答：{ai_reply_text[:30]}"
+            new_title = summarize_session_title(chat_summary_input)
+            session_obj.title = new_title
+        except:
+            # 如果崩了，也用干净的内容截取
+            clean_content = content.split("用户描述：")[-1] if "用户描述：" in content else content
+            session_obj.title = clean_content[:10] + "..."
+        
+        db.add(session_obj)
+
+    # 7. 最后统一提交所有更改
     db.commit()
     db.refresh(ai_msg)
-    
+
     return ai_msg
     

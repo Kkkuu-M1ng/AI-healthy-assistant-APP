@@ -1,45 +1,47 @@
 <template>
   <PageShell tab="home">
-    <!-- 顶部渐变背景 -->
     <div class="top-bg">
       <div class="greet">
+        <!-- 💡 1. 绑定真实昵称 -->
         <div class="hello">你好，{{ userName }}</div>
         <div class="sub">家庭健康助手</div>
       </div>
 
-      <!-- 家庭头像区 -->
-      <div class="avatars-wrapper"> <!-- 1. 新增：这是限制宽度的窗户 -->
-        <div class="avatars"> <!-- 2. 这是会自动延长的轨道 -->
+      <div class="avatars-wrapper">
+        <div class="avatars">
           <div v-for="m in members" :key="m.id" class="avatar-item" :class="{ active: m.id === activeMemberId }"
             @click="activeMemberId = m.id">
             <div class="avatar-circle">
-              <!-- 💡 小技巧：如果有头像链接就显示图，没有就显示图标 -->
               <img v-if="m.avatar_url" :src="m.avatar_url" class="real-avatar" />
               <span v-else class="avatar-icon">👤</span>
             </div>
             <div class="avatar-name">{{ m.name }}</div>
           </div>
         </div>
+        <div class="ai-status-bar">
+          <span class="ai-sparkle">✨</span>
+          <span class="ai-msg">{{ aiGreeting }}</span>
+        </div>
       </div>
     </div>
 
-    <!-- 中间内容区 -->
     <div class="content">
       <div class="cards-row">
         <!-- 个性化建议 -->
         <div class="card">
           <div class="card-title">个性化建议</div>
 
-          <div class="mini">
-            <div class="mini-text">{{ suggestionTitle }}</div>
+          <!-- 💡 2. 循环显示真实的精简建议 -->
+          <template v-if="adviceList.length > 0">
+            <div v-for="adv in adviceList" :key="adv.id" class="mini">
+              <div class="mini-text">{{ adv.title }}</div>
+            </div>
+          </template>
+          <div v-else class="mini">
+            <div class="mini-text light">暂无建议，点击下方开始问诊</div>
           </div>
 
-          <div class="mini input-like">
-            <div class="mini-text light">{{ suggestionDetail }}</div>
-          </div>
-
-          <!-- 这里后面我们会改成跳转 /advice -->
-          <button class="btn pill" @click="toast('查看更多建议')">
+          <button class="btn pill" @click="router.push('/advice')">
             查看更多建议
           </button>
         </div>
@@ -54,29 +56,33 @@
           <div class="hint">描述您的症状，我来帮您分析</div>
 
           <div class="history">
-            <div v-for="(h, idx) in consultHistory" :key="idx" class="history-item" @click="toast('打开：' + h)">
-              {{ h }}
+            <!-- 💡 修改 1：循环里直接拿 h 即可，Key 建议用真实的 id -->
+            <div v-for="h in consultHistory" :key="h.id" class="history-item">
+              <!-- 💡 修改 2：重点！这里必须写 h.title -->
+              <span style="color: #000;">{{ h.title }}</span>
+            </div>
+
+            <!-- 兜底 -->
+            <div v-if="consultHistory.length === 0" class="history-item" style="color:#ccc">
+              暂无历史记录
             </div>
           </div>
 
-          <!-- 这里后面我们会改成跳转 /consult -->
-          <button class="btn primary" @click="toast('开始问诊')">
+          <!-- 💡 3. 点击跳转到问诊页 -->
+          <button class="btn primary" @click="router.push('/consult')">
             开始问诊
           </button>
         </div>
       </div>
 
-      <!-- 健康百科 -->
+      <!-- 健康百科 (保持原样，后期可对接接口) -->
       <div class="wiki">
         <div class="wiki-head">
           <div class="wiki-title">健康百科</div>
-
-          <!-- 这里后面我们会改成跳转 /wiki -->
-          <button class="arrow" @click="toast('进入健康百科列表')">→</button>
+          <button class="arrow" @click="router.push('/wiki')">→</button>
         </div>
-
         <div class="wiki-grid">
-          <div v-for="w in wikiCards" :key="w.title" class="wiki-card" @click="toast('打开：' + w.title)">
+          <div v-for="w in wikiCards" :key="w.title" class="wiki-card">
             <div class="wiki-card-title">{{ w.title }}</div>
           </div>
         </div>
@@ -86,59 +92,105 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch} from "vue";
+import { ref, onMounted, watch, computed } from "vue";
+import { useRouter } from "vue-router";
 import { apiGet } from "../api/http";
 import PageShell from "../components/PageShell.vue";
 
+const router = useRouter();
 const LS_MEMBER_KEY = "active_member_id";
 
-// 1. 定义变量
-const members = ref([]); // 存放全家人
-const activeMemberId = ref(null); // 当前选中的“副卡ID” (FamilyMember.id)
-const adviceList = ref([]); // 存放建议预览
+// 1. 变量定义
+const userName = ref("加载中...");
+const members = ref([]);
+const activeMemberId = ref(null);
+const adviceList = ref([]); // 首页展示的精简列表
+const consultHistory = ref([]); // 存放真实的问诊历史
 
-// 2. 页面加载：去后端抓人
+// 百科静态占位数据
+const wikiCards = [
+  { title: "高血压防治" },
+  { title: "儿童饮食指南" },
+  { title: "糖尿病知识" }
+];
+
+// 2. 初始化：获取用户信息和成员列表
 onMounted(async () => {
   try {
-    // 获取当前用户旗下的所有家庭成员
+    // A. 获取我的昵称 (从 me 接口拿)
+    const user = await apiGet("/me");
+    userName.value = user.nickname || "新用户";
+
+    // B. 获取成员列表
     const res = await apiGet("/members");
     members.value = res;
 
-    const savedId = localStorage.getItem(LS_MEMBER_KEY);
+    // 🆕 获取问诊历史
+    const sessions = await apiGet("/consult/sessions");
+    // 首页只展示最近的 2 个
+    consultHistory.value = sessions.slice(0, 3);
 
+    // C. 同步选中状态
+    const savedId = localStorage.getItem(LS_MEMBER_KEY);
     if (savedId && res.find(m => m.id == savedId)) {
       activeMemberId.value = parseInt(savedId);
     } else if (res.length > 0) {
-      // 没记过或者是脏数据，默认选第一个
       activeMemberId.value = res[0].id;
     }
- 
-    loadPreviewData(res[0].id);
-    
+
+
+
+    // D. 初始加载建议预览
+    if (activeMemberId.value) {
+      loadPreviewData(activeMemberId.value);
+    }
+
   } catch (e) {
-    console.error("首页数据初始化失败");
+    console.error("首页数据加载失败", e);
+    userName.value = "请先登录";
   }
 });
 
+// 3. 核心：监听成员切换
 watch(activeMemberId, (newId) => {
   if (newId) {
-    // 💡 只要 ID 变了，就立刻记在小本子上
-    localStorage.setItem(LS_MEMBER_KEY, newId);
-    loadPreviewData(newId);
+    localStorage.setItem(LS_MEMBER_KEY, newId); // 全局同步钥匙
+    loadPreviewData(newId); // 重新加载下方的建议
   }
 });
 
-// 3. 点击头像切换人选
-function handleSelectMember(id) {
-  activeMemberId.value = id;
-  loadPreviewData(id); // 切换后，下方的建议也跟着变
-}
+const aiGreeting = computed(() => {
+  const m = members.value.find(x => x.id === activeMemberId.value);
+  if (!m) return "正在同步家庭健康数据...";
 
-// 4. 获取该成员的精简版建议（对应你 UI 左侧的卡片）
+  // 1. 优先逻辑：检查资料完整度
+  if (!m.height || !m.weight) {
+    return `你好 ${m.name}，建议前往“我的”页面补全身高体重，以便我计算你的健康指标。`;
+  }
+
+  // 2. 次要逻辑：根据慢病标签（这里需要你之前改好的字典格式）
+  if (m.tags && Object.keys(m.tags).length > 0) {
+    const mainTag = Object.keys(m.tags)[0]; // 拿第一个病
+    return `今日关注：针对你的${mainTag}情况，我已更新了专科建议，记得查看。`;
+  }
+
+  // 3. 兜底逻辑：根据 BMI
+  const h = m.height / 100;
+  const bmi = (m.weight / (h * h)).toFixed(1);
+  if (bmi > 24) return `当前 BMI 为 ${bmi}（偏重），建议今日增加 30 分钟有氧运动。`;
+
+  return `你好 ${m.name}，今天感觉怎么样？我随时待命为您解答健康疑问。`;
+});
+
+// 4. 获取该成员的精简版建议 (只取最新两条)
 async function loadPreviewData(memberId) {
-  const res = await apiGet(`/advice?member_id=${memberId}`);
-  // 只取前两条做精简展示
-  adviceList.value = res.slice(0, 2);
+  try {
+    const res = await apiGet(`/advice?member_id=${memberId}`);
+    // 首页卡片小，我们只展示最新的 2 条建议
+    adviceList.value = res.slice(0, 3);
+  } catch (e) {
+    adviceList.value = [];
+  }
 }
 </script>
 
@@ -181,9 +233,12 @@ async function loadPreviewData(memberId) {
 /* 头像栏 */
 .avatars-wrapper {
   width: 100%;
-  overflow-x: auto;          /* 👈 开启横向滚动 */
-  white-space: nowrap;       /* 👈 强制不换行 */
-  -webkit-overflow-scrolling: touch; /* 让手机滑动更丝滑 */
+  overflow-x: auto;
+  /* 👈 开启横向滚动 */
+  white-space: nowrap;
+  /* 👈 强制不换行 */
+  -webkit-overflow-scrolling: touch;
+  /* 让手机滑动更丝滑 */
   padding: 10px 0;
 }
 
@@ -192,11 +247,43 @@ async function loadPreviewData(memberId) {
   display: none;
 }
 
+.ai-status-bar {
+  padding: 8px 24px;
+  /* 上下4px，左边空出24px（跟头像对齐或略微缩进） */
+  margin-top: 12px;
+  /* 紧贴头像栏下方 */
+  margin-bottom: 4px;
+  margin-right: 12px;
+  margin-left: -16px;
+}
+
+/* 文字样式：灰色、小号、多行左对齐 */
+.ai-msg {
+  font-size: 12px;
+  /* 字号调小 */
+  color: #8a9999;
+  /* 阴影感的深灰色 */
+  line-height: 1.6;
+  /* 增加行高，多行时不拥挤 */
+  text-align: left;
+  /* 左对齐 */
+  white-space: pre-wrap;
+  /* 支持逻辑中的换行符 */
+  font-weight: 400;
+  /* 不要太粗，显得轻盈 */
+
+  /* 增加一个非常淡的文字阴影，增加质感（可选） */
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.8);
+}
+
 /* 2. 内层轨道：负责让成员排成一排 */
 .avatars {
-  display: inline-flex;      /* 👈 让内容按行排列 */
-  gap: 20px;                 /* 成员之间的间距 */
-  padding: 0 16px;           /* 给左右两边留点空，防止贴边 */
+  display: inline-flex;
+  /* 👈 让内容按行排列 */
+  gap: 20px;
+  /* 成员之间的间距 */
+  padding: 0 16px;
+  /* 给左右两边留点空，防止贴边 */
 }
 
 /* 3. 每个成员的样式 */
@@ -204,7 +291,8 @@ async function loadPreviewData(memberId) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex-shrink: 0;            /* 👈 关键：防止宽度被挤压变扁 */
+  flex-shrink: 0;
+  /* 👈 关键：防止宽度被挤压变扁 */
   cursor: pointer;
   transition: all 0.3s ease;
 }
@@ -214,7 +302,8 @@ async function loadPreviewData(memberId) {
   height: 60px;
   border-radius: 50%;
   background: #f0f4f4;
-  border: 2px solid transparent; /* 默认透明边框 */
+  border: 2px solid transparent;
+  /* 默认透明边框 */
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -227,9 +316,11 @@ async function loadPreviewData(memberId) {
 }
 
 .avatar-item.active .avatar-circle {
-  border-color: #17a2a2;      /* 选中时边框变色 */
+  border-color: #17a2a2;
+  /* 选中时边框变色 */
   background: #e0f2f2;
-  transform: translateY(-5px); /* 选中时往上弹一点点，更灵动 */
+  transform: translateY(-5px);
+  /* 选中时往上弹一点点，更灵动 */
 }
 
 .avatar-item.active .avatar-name {
@@ -323,6 +414,7 @@ async function loadPreviewData(memberId) {
   padding: 6px 8px;
   font-size: 12px;
   cursor: pointer;
+  
 }
 
 /* 按钮 */
