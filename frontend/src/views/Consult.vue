@@ -3,38 +3,38 @@
     <div class="consult-page">
       <!-- 顶部导航 -->
       <div class="nav">
-        <button class="icon-btn" @click="onDoctorClick" title="接入真实医生（预留）">
-          🩺
-        </button>
+        <!-- 1. 左侧容器 -->
+        <div class="nav-side-box">
+          <button class="icon-btn" @click="onDoctorClick">🩺</button>
+        </div>
 
+        <!-- 2. 中间标题 -->
         <div class="nav-title">
           <div class="t1">AI 问诊</div>
           <div class="t2">选择类别后开始对话</div>
         </div>
 
-        <button class="icon-btn" @click="openHistory" title="历史记录">
-          🕘
-        </button>
+        <!-- 3. 右侧容器 -->
+        <div class="nav-side-box right">
+          <button class="icon-btn" @click="handleManualNewSession">➕</button>
+          <button class="icon-btn" @click="openHistory">🕘</button>
+        </div>
       </div>
 
       <!-- 类别选择 -->
       <div class="modes">
-        <button
-          v-for="m in modes"
-          :key="m.key"
-          class="mode"
-          :class="{ on: mode === m.key }"
-          @click="setMode(m.key)"
-        >
+        <button v-for="m in modes" :key="m.key" class="mode" :class="{ on: mode === m.key }" @click="setMode(m.key)">
           <span class="ico">{{ m.ico }}</span>
           <span class="txt">{{ m.label }}</span>
         </button>
       </div>
 
-      <!-- 提示条 -->
-      <div class="hint">
-        <span class="dot"></span>
-        <span class="hint-text">{{ modeHint }}</span>
+      <div class="action-bar">
+        <button class="gen-plan-btn" @click="handleGeneratePlan"
+          :disabled="isGenerating || (currentSession?.messages?.length || 0) < 2">
+          <span v-if="!isGenerating">🪄 结束问诊并生成健康方案</span>
+          <span v-else>正在生成专家方案...</span>
+        </button>
       </div>
 
       <!-- 消息区 -->
@@ -71,13 +71,8 @@
           ＋
         </button>
 
-        <textarea
-          v-model="input"
-          class="input"
-          rows="2"
-          placeholder="描述症状：持续多久？是否发热/腹痛/咳嗽？有无基础病/用药？"
-          @keydown.enter.exact.prevent="sendText"
-        />
+        <textarea v-model="input" class="input" rows="2" placeholder="描述症状：持续多久？是否发热/腹痛/咳嗽？有无基础病/用药？"
+          @keydown.enter.exact.prevent="sendText" />
 
         <button class="send" :disabled="!canSend" @click="sendText">
           {{ loading ? "…" : "发送" }}
@@ -94,13 +89,7 @@
         </div>
 
         <!-- 隐藏 file input -->
-        <input
-          ref="fileInput"
-          type="file"
-          accept="image/*"
-          class="file"
-          @change="onFileChange"
-        />
+        <input ref="fileInput" type="file" accept="image/*" class="file" @change="onFileChange" />
       </div>
 
       <!-- ✅ 给 PageShell tabbar 留安全区（不改 PageShell） -->
@@ -118,17 +107,15 @@
           </div>
 
           <div class="sheet-list">
-            <div
-              v-for="s in sessions"
-              :key="s.id"
-              class="session"
-              :class="{ on: s.id === currentSessionId }"
-              @click="loadSession(s.id)"
-            >
+            <div v-for="s in sessions" :key="s.id" class="session" :class="{ on: s.id === currentSessionId }"
+              @click="loadSession(s.id)">
               <div class="session-top">
                 <div class="session-title">
                   {{ modeLabel(s.mode) }} · {{ s.title || '未命名会话' }}
                 </div>
+                <button class="btn-del-session" @click.stop="confirmDeleteSession(s)">
+                  🗑️
+                </button>
                 <div class="session-time">{{ s.updatedAt }}</div>
               </div>
               <div class="session-sub">
@@ -142,56 +129,160 @@
           </div>
         </div>
       </div>
+
+      <div v-if="isGenerating" class="loading-overlay">
+        <div class="loader-box">
+          <div class="spinner"></div>
+          <p>AI 医生正在复盘对话...</p>
+          <p class="sub-hint">正在为您定制专属健康方案</p>
+        </div>
+      </div>
     </div>
   </PageShell>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onBeforeUnmount, ref } from "vue";
-import PageShell from "../components/PageShell.vue"; 
-import { apiPost } from '../api/http'; 
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import PageShell from "../components/PageShell.vue";
+import { apiPost, getToken, apiGet } from '../api/http';
+import { useRouter } from "vue-router";
 
 const LS_MEMBER_KEY = "active_member_id";
+const router = useRouter();
+const isGenerating = ref(false);
 
-onMounted(async () => {
-  const mid = localStorage.getItem("active_member_id") || 1; 
- 
-  try {
-    console.log(`正在为成员 ID: ${mid} 开启专属问诊室...`);
-    
-    // 3. 【核心连接】告诉后端：这次聊天是为 ID 为 mid 的那个人聊的
-    const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
-    
-    // 拿到这次会话的 ID
-    currentSessionId.value = res.id;
-    
-    // ... 后续逻辑
-  } catch (e) {
-    console.error("问诊室开启失败", e);
+function handleManualNewSession() {
+  // 1. 构造一个全新的前端会话对象
+  const newShell = {
+    id: uid(),           // 前端用的随机 ID
+    serverId: null,      // 👈 重要！标记此会话还没在数据库挂号
+    mode: mode.value,    // 继承当前的模式（常用/儿童等）
+    title: "新问诊会话",
+    updatedAt: nowDateTime(),
+    preview: "（尚未开始）",
+    messages: [{
+      id: uid(),
+      role: "ai",
+      type: "text",
+      time: nowTime(),
+      text: "你好，我是AI问诊助手。请描述你的症状，我会为你分析。"
+    }]
+  };
+
+  // 2. 把新会话塞到列表最前面
+  sessions.value.unshift(newShell);
+
+  // 3. 切换到这个新会话
+  currentSessionId.value = newShell.id;
+
+  // 4. 保存一下“本子”的现状，关闭历史弹层
+  saveSessions();
+  historyOpen.value = false;
+
+  // 5. 滚动到顶部（欢迎语）
+  scrollToBottom();
+
+  console.log("📝 已开启新画布，等待用户首句发言后领号...");
+}
+
+async function handleGeneratePlan() {
+  // 1. 获取后端会话 ID (对应你数据库里的 ConsultSession.id)
+  // 💡 注意：这里确保你之前存入的变量名是正确的，比如叫 currentSessionId 还是 backendSessionId
+  const sid = currentSession.value.serverId;
+
+  if (!sid) {
+    alert("当前会话尚未建立，请先发送一条消息。");
+    return;
   }
-});
 
+  // 2. 确认弹窗
+  if (!confirm("确定结束本次咨询并生成健康方案吗？")) return;
+
+  // 3. 开启加载状态
+  isGenerating.value = true;
+
+  try {
+    // 4. 调用我们刚才写好的后端生成接口
+    const res = await apiPost(`/consult/${sid}/generate_plan`, {});
+
+    if (res.ok) {
+      alert(`🎉 方案生成成功！\nAI 医生为您制定了 ${res.count_advice} 条新建议。`);
+
+      // 5. 【高光时刻】：自动跳转到建议页查看成果
+      router.push('/advice');
+    }
+  } catch (e) {
+    console.error("生成方案失败", e);
+    alert("生成方案时遇到一点小意外，请重试。");
+  } finally {
+    isGenerating.value = false;
+  }
+}
+
+// ====== 唯一合法的初始化挂载 ======
 onMounted(async () => {
-  console.log("检测到进入问诊页，正在准备新的问诊环境...");
-  
-  // 1. 强制开启一个全新的会话
-  await startFreshSession();
-  
-  // 2. 之前的监听和安全区逻辑保持不变
+  console.log("🚀 正在初始化问诊环境...");
+
+  try {
+    // --- 第一步：对账（清理本地已失效的记录） ---
+    const serverSessions = await apiGet("/consult/sessions");
+    const serverIds = serverSessions.map(s => s.id);
+
+    // 加载本地数据
+    const localData = loadSessions();
+
+    // 过滤掉那些后端已经找不到的 serverId
+    const syncedSessions = localData.filter(localSess => {
+      if (!localSess.serverId) return true; // 还没领号的暂留
+      return serverIds.includes(localSess.serverId); // 后端有的才留
+    });
+
+    // --- 第二步：恢复状态 ---
+    if (syncedSessions.length > 0) {
+      sessions.value = syncedSessions;
+      // 默认选中第一个（也就是最近聊过的那个）
+      if (!currentSessionId.value) {
+        currentSessionId.value = syncedSessions[0].id;
+      }
+      console.log("✅ 已成功恢复上一轮对话");
+    } else {
+      // 如果全空（比如新用户或刚清空了），建一个前端“壳子”，不调接口！
+      console.log("📝 欢迎新用户，已建立空白问诊单");
+      const shell = {
+        id: uid(),
+        serverId: null, // 👈 说话时再领号
+        mode: mode.value,
+        title: "新问诊会话",
+        messages: defaultWelcomeMessages(),
+        updatedAt: nowDateTime()
+      };
+      sessions.value = [shell];
+      currentSessionId.value = shell.id;
+    }
+
+    saveSessions(); // 同步结果到本地存储
+
+  } catch (e) {
+    console.warn("⚠️ 初始化对账失败，将使用本地缓存", e);
+    sessions.value = loadSessions();
+  }
+
+  // --- 第三步：安全区与滚动监听 ---
   window.addEventListener("click", onGlobalClick);
   scrollToBottom();
 });
+
 
 async function startFreshSession() {
   loading.value = true;
   try {
     // 1. 获取当前选中的成员（确保知道是为谁看病）
     const mid = localStorage.getItem("active_member_id") || 1;
-    
+
     // 2. 核心：向后端请求一个新的会话 ID
     // 每次刷新或进入，后端都会在 ConsultSession 表里产生一条新记录
     const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
-    
+
     // 3. 在前端创建一个全新的 session 对象
     const newSessId = uid(); // 前端用的唯一标识
     const s = {
@@ -207,10 +298,10 @@ async function startFreshSession() {
     // 4. 把新会话塞进列表最前面，并设为当前活跃会话
     sessions.value.unshift(s);
     currentSessionId.value = newSessId;
-    
+
     // 5. 持久化到本地，防止刷新丢了
     saveSessions();
-    
+
     console.log("✨ 专属问诊室已开启，后端ID:", res.id);
   } catch (e) {
     console.error("开启新问诊失败", e);
@@ -222,7 +313,7 @@ async function startFreshSession() {
 
 /** ============ 配置：四类模式 ============ */
 const modes = [
-  { key: "common", label: "常用", ico: "💬", prompt: "你是全科医生..." }, 
+  { key: "common", label: "常用", ico: "💬", prompt: "你是全科医生..." },
   { key: "child", label: "儿童", ico: "🧒", prompt: "你是儿科医生..." },
   { key: "pregnant", label: "孕妇", ico: "🤰", prompt: "你是产科医生..." },
   { key: "elder", label: "老年", ico: "👴", prompt: "你是老年医生..." },
@@ -304,23 +395,59 @@ const currentSessionId = ref("");
 // 👇 2. 核心修改：确保当前会话有“后端ID”
 // 如果是老数据没有 serverId，或者新会话，都需要去后端申请一个
 async function ensureBackendSession(session) {
+  // 如果已经领过号了（serverId有值），直接用
   if (session.serverId) return session.serverId;
 
-  // 1. 就在这里，就在这个函数内部，给 mid 下定义
-  const mid = localStorage.getItem("active_member_id") || 1; 
-
-  console.log(`正在向后端申请成员 ${mid} 的会话ID...`);
+  // 如果 serverId 是 null，说明是刚才点 ➕ 号新建的，现在去后端注册
+  const mid = localStorage.getItem("active_member_id") || 1;
+  console.log("🚀 用户开口说话了，正在前往后端领取唯一 ID...");
 
   try {
-    // 2. 只有上面定义了 mid，下面这一行的大括号里才能认出它
     const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
-    
-    session.serverId = res.id; 
-    saveSessions();
+    session.serverId = res.id; // 拿到真 ID (比如 105)
+    saveSessions(); // 存进本地记忆
     return session.serverId;
   } catch (e) {
-    console.error("连接后端失败:", e);
+    alert("问诊室开启失败，请检查网络");
     throw e;
+  }
+}
+
+async function confirmDeleteSession(s) {
+  // 1. 获取后端真实 ID
+  const sid = s.serverId;
+
+  if (!sid) {
+    // 如果这一条记录根本没传到后端（比如只是本地生成的空白），直接本地删了就行
+    sessions.value = sessions.value.filter(item => item.id !== s.id);
+    return;
+  }
+
+  if (!confirm("确定要永久删除这条问诊记录吗？")) return;
+
+  try {
+    // 2. 【核心修改】这里确保传的是数字 ID
+    const resp = await fetch(`http://127.0.0.1:8000/api/consult/sessions/${sid}`, {
+      method: 'DELETE',
+      headers: {
+        "Authorization": `Bearer ${getToken()}`
+      }
+    });
+
+    if (resp.ok) {
+      // 3. 成功后，按前端 UUID 过滤列表，界面同步更新
+      sessions.value = sessions.value.filter(item => item.id !== s.id);
+
+      if (s.id === currentSessionId.value) {
+        currentSessionId.value = "";
+      }
+      console.log("后端记录已成功删除");
+    } else {
+      const err = await resp.json();
+      alert("删除失败：" + err.detail);
+    }
+  } catch (e) {
+    alert("网络错误");
   }
 }
 
@@ -349,7 +476,7 @@ const currentSession = computed(() => {
 });
 
 onMounted(() => {
-  ensureSession();   
+  ensureSession();
 });
 
 
@@ -459,7 +586,7 @@ async function sendText() {
     // 这里我们简单粗暴地拼接，让 AI 知道它的身份
     const currentModeConfig = modes.find(m => m.key === mode.value);
     const systemInstruction = currentModeConfig ? `【系统指令：${currentModeConfig.prompt}】\n` : "";
-    
+
     // 如果是该会话的第一句话，带上 System Prompt，否则只发内容
     // 简单起见，我们每次都带上模式标记，让 AI 保持人设
     const finalContent = `${systemInstruction}用户描述：${text}`;
@@ -470,20 +597,20 @@ async function sendText() {
 
     // 5. 后端返回结果上屏
     currentSession.value.messages.push({
-      id: uid(), 
-      role: "ai", 
-      type: "text", 
+      id: uid(),
+      role: "ai",
+      type: "text",
       time: nowTime(),
       text: res.content // 后端返回的 JSON 里 content 字段
     });
-    
+
     saveSessions(); // 保存聊天记录到本地
 
   } catch (err) {
     console.error(err);
     currentSession.value.messages.push({
       id: uid(), role: "ai", type: "text", time: nowTime(),
-      text: `(发送失败: ${err.message || '网络错误'})` 
+      text: `(发送失败: ${err.message || '网络错误'})`
     });
   } finally {
     loading.value = false;
@@ -583,7 +710,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* 整页：不左右滑；消息区内部滚动 */
-.consult-page{
+.consult-page {
   height: 100%;
   box-sizing: border-box;
   padding: 14px 0 0;
@@ -595,157 +722,239 @@ onBeforeUnmount(() => {
 }
 
 /* 顶部导航 */
-.nav{
-  background:#fff;
-  border:1px solid #e7efef;
-  border-radius:14px;
-  padding:10px 10px;
-  display:grid;
-  grid-template-columns: 40px 1fr 40px;
-  align-items:center;
-  gap: 10px;
-}
-.icon-btn{
-  width: 40px; height: 40px;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.08);
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  
+  /* 💡 关键：确保 padding 算在宽度内，且宽度不溢出 */
+  box-sizing: border-box;
+  width: 100%; 
+  padding: 8px 12px; /* 内部留一点距离，不让按钮贴边 */
+  
   background: #fff;
+  border: 1px solid #e7efef;
+  border-radius: 16px;
+}
+
+/* 左右两个侧边盒子的逻辑 */
+.nav-side-box {
+  width: 80px;      /* 👈 固定一个宽度，保证左右是对称的 */
+  display: flex;
+  gap: 8px;
+}
+
+.nav-side-box.right {
+  justify-content: flex-end; /* 👈 让右边的按钮靠最右排队 */
+}
+
+/* 中间标题的逻辑 */
+.nav-title {
+  flex: 1;           /* 👈 占据中间剩下的所有空间 */
+  text-align: center;
+  min-width: 0;      /* 防止文字太长撑破布局 */
+}
+
+.t1 { font-size: 15px; font-weight: 900; color: #123; }
+.t2 { font-size: 11px; color: #6b7f7f; margin-top: 2px; }
+
+/* 按钮样式（微调，确保居中） */
+.icon-btn {
+  width: 32px;       /* 稍微调小一点点，适配小屏幕 */
+  height: 32px;
+  display: flex;     /* 改用 flex 居中更稳 */
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid #f0f4f4;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 18px;
-}
-.nav-title .t1{
-  font-weight: 900;
-  color:#123;
-  font-size: 15px;
-  line-height: 1.1;
-}
-.nav-title .t2{
-  margin-top: 3px;
-  font-size: 12px;
-  color:#6b7f7f;
+  padding: 0;
+  font-size: 16px;
+  flex-shrink: 0;    /* 👈 关键：不准被挤扁 */
 }
 
 /* 类别 */
-.modes{
-  background:#fff;
-  border:1px solid #e7efef;
-  border-radius:14px;
-  padding:10px;
-  display:grid;
+.modes {
+  background: #fff;
+  border: 1px solid #e7efef;
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
-.mode{
-  border: 1px solid rgba(0,0,0,.08);
-  background:#fff;
-  border-radius:12px;
+
+.mode {
+  border: 1px solid rgba(0, 0, 0, .08);
+  background: #fff;
+  border-radius: 12px;
   padding: 8px 6px;
-  cursor:pointer;
-  display:grid;
-  justify-items:center;
+  cursor: pointer;
+  display: grid;
+  justify-items: center;
   gap: 2px;
 }
-.mode.on{
-  border-color: rgba(23,162,162,.45);
-  background: rgba(23,162,162,.10);
-}
-.mode .ico{ font-size: 16px; }
-.mode .txt{ font-size: 11px; color:#2a3c3c; font-weight: 800; }
 
-/* 提示 */
-.hint{
-  background:#fff;
-  border:1px solid #e7efef;
-  border-radius:14px;
-  padding: 10px 12px;
-  display:flex;
-  gap: 8px;
-  align-items:flex-start;
+.mode.on {
+  border-color: rgba(23, 162, 162, .45);
+  background: rgba(23, 162, 162, .10);
 }
-.dot{
-  width: 8px; height: 8px;
-  border-radius: 99px;
-  background:#17a2a2;
-  margin-top: 4px;
+
+.mode .ico {
+  font-size: 16px;
 }
-.hint-text{
-  font-size: 12px;
-  color:#4f6464;
-  line-height: 1.35;
+
+.mode .txt {
+  font-size: 11px;
+  color: #2a3c3c;
+  font-weight: 800;
+}
+
+/* 1. 外层容器：负责左右的 Margin */
+.action-bar {
+  padding: 0 16px;
+  /* 左右留白 */
+  margin-top: -4px;
+  /* 向上靠拢，贴合上面的提示条 */
+  margin-bottom: 12px;
+  /* 与下方聊天记录拉开一点距离 */
+}
+
+/* 2. 按钮本体：小巧、精致、有质感 */
+.gen-plan-btn {
+  width: 100%;
+  /* 宽度撑满容器 */
+  height: 38px;
+  /* 固定高度，不要太厚 */
+  border: none;
+  background: linear-gradient(135deg, #17a2a2, #10b981);
+  /* 渐变色 */
+  color: white;
+  border-radius: 12px;
+  /* 柔和的圆角 */
+  font-size: 13px;
+  /* 字体小一点，显专业 */
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(23, 162, 162, 0.15);
+  /* 淡阴影 */
+  transition: all 0.3s ease;
+}
+
+/* 3. 禁用状态（还没怎么聊的时候） */
+.gen-plan-btn:disabled {
+  background: #f0f4f4;
+  /* 浅灰色 */
+  color: #aebdbd;
+  /* 灰字 */
+  box-shadow: none;
+  /* 移除阴影 */
+  cursor: not-allowed;
+}
+
+/* 4. 点击反馈效果 */
+.gen-plan-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  /* 点击时微微缩小 */
+  opacity: 0.9;
 }
 
 /* 消息区 */
-.msgs{
+.msgs {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 2px;
 }
-.row{
-  display:flex;
+
+.row {
+  display: flex;
   margin: 8px 0;
 }
-.row.user{ justify-content: flex-end; }
-.row.ai{ justify-content: flex-start; }
-.bubble{
+
+.row.user {
+  justify-content: flex-end;
+}
+
+.row.ai {
+  justify-content: flex-start;
+}
+
+.bubble {
   max-width: 82%;
   border-radius: 14px;
   padding: 10px;
-  border: 1px solid rgba(0,0,0,.06);
+  border: 1px solid rgba(0, 0, 0, .06);
   background: #fff;
 }
-.row.user .bubble{
-  background: rgba(23,162,162,.10);
-  border-color: rgba(23,162,162,.20);
+
+.row.user .bubble {
+  background: rgba(23, 162, 162, .10);
+  border-color: rgba(23, 162, 162, .20);
 }
-.meta{
-  display:flex;
+
+.meta {
+  display: flex;
   justify-content: space-between;
   gap: 10px;
   font-size: 11px;
-  color:#6b7f7f;
+  color: #6b7f7f;
   margin-bottom: 6px;
 }
-.who{ font-weight: 900; color:#2a3c3c; }
-.text{
+
+.who {
+  font-weight: 900;
+  color: #2a3c3c;
+}
+
+.text {
   font-size: 13px;
-  color:#123;
+  color: #123;
   white-space: pre-wrap;
 }
-.img-wrap img{
+
+.img-wrap img {
   width: 100%;
   border-radius: 12px;
-  display:block;
-  border: 1px solid rgba(0,0,0,.06);
+  display: block;
+  border: 1px solid rgba(0, 0, 0, .06);
 }
-.img-caption{
+
+.img-caption {
   margin-top: 8px;
   font-size: 12px;
-  color:#2a3c3c;
+  color: #2a3c3c;
   white-space: pre-wrap;
 }
 
 /* 输入区 */
-.inputbar{
+.inputbar {
   position: relative;
-  background:#fff;
-  border:1px solid #e7efef;
-  border-radius:14px;
-  padding:10px;
-  display:grid;
+  background: #fff;
+  border: 1px solid #e7efef;
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
   grid-template-columns: 40px 1fr 74px;
   gap: 10px;
-  align-items:end;
+  align-items: end;
 }
-.plus{
-  width: 40px; height: 40px;
+
+.plus {
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.08);
-  background:#fff;
+  border: 1px solid rgba(0, 0, 0, .08);
+  background: #fff;
   font-size: 18px;
   cursor: pointer;
 }
-.input{
+
+.input {
   width: 100%;
   resize: none;
   box-sizing: border-box;
@@ -755,32 +964,41 @@ onBeforeUnmount(() => {
   font-size: 13px;
   outline: none;
 }
-.input:focus{ border-color: rgba(23,162,162,.55); }
-.send{
+
+.input:focus {
+  border-color: rgba(23, 162, 162, .55);
+}
+
+.send {
   height: 40px;
   border-radius: 12px;
   border: 1px solid #17a2a2;
-  background:#17a2a2;
-  color:#fff;
+  background: #17a2a2;
+  color: #fff;
   font-weight: 900;
-  cursor:pointer;
+  cursor: pointer;
 }
-.send:disabled{ opacity:.55; cursor:not-allowed; }
+
+.send:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
 
 /* + 菜单 */
-.plus-menu{
+.plus-menu {
   position: absolute;
   left: 10px;
   bottom: 58px;
   width: 180px;
-  background:#fff;
-  border:1px solid rgba(0,0,0,.10);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, .10);
   border-radius: 14px;
-  box-shadow: 0 12px 30px rgba(0,0,0,.12);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .12);
   overflow: hidden;
   z-index: 20;
 }
-.menu-item{
+
+.menu-item {
   width: 100%;
   text-align: left;
   padding: 12px 12px;
@@ -789,106 +1007,198 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: 13px;
 }
-.menu-item:hover{
-  background: rgba(23,162,162,.08);
+
+.menu-item:hover {
+  background: rgba(23, 162, 162, .08);
 }
-.file{ display:none; }
+
+.file {
+  display: none;
+}
 
 /* tabbar 安全区（不改 PageShell） */
-.safe-bottom{ height: 72px; }
+.safe-bottom {
+  height: 72px;
+}
 
 /* 历史弹层 */
-.mask{
+.mask {
   position: absolute;
-  left: 0; top: 0; right: 0; bottom: 64px; /* 不盖住 tabbar */
-  background: rgba(0,0,0,.35);
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 64px;
+  /* 不盖住 tabbar */
+  background: rgba(0, 0, 0, .35);
   display: grid;
   place-items: center;
   z-index: 60;
 }
-.sheet{
+
+.sheet {
   width: 92%;
   max-height: 84%;
-  background:#fff;
+  background: #fff;
   border-radius: 16px;
-  border: 1px solid rgba(0,0,0,.10);
+  border: 1px solid rgba(0, 0, 0, .10);
   overflow: hidden;
   display: grid;
   grid-template-rows: auto 1fr auto;
 }
-.sheet-head{
+
+.sheet-head {
   padding: 12px;
-  border-bottom: 1px solid rgba(0,0,0,.06);
-  display:flex;
-  align-items:center;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
-.sheet-title{
+
+.sheet-title {
   font-size: 14px;
   font-weight: 900;
-  color:#123;
+  color: #123;
 }
-.sheet-actions{ display:flex; gap: 8px; }
-.btn{
-  border: 1px solid rgba(0,0,0,.10);
-  background:#fff;
+
+.sheet-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  border: 1px solid rgba(0, 0, 0, .10);
+  background: #fff;
   border-radius: 12px;
   padding: 8px 10px;
   font-size: 12px;
   cursor: pointer;
 }
-.btn.ghost{
-  background: rgba(23,162,162,.08);
-  border-color: rgba(23,162,162,.25);
+
+.btn.ghost {
+  background: rgba(23, 162, 162, .08);
+  border-color: rgba(23, 162, 162, .25);
 }
-.btn.danger{
-  border-color: rgba(226,59,59,.35);
+
+.btn.danger {
+  border-color: rgba(226, 59, 59, .35);
   color: #e23b3b;
 }
-.sheet-list{
+
+.sheet-list {
   padding: 10px 12px;
   overflow-y: auto;
   overflow-x: hidden;
   display: grid;
   gap: 10px;
 }
-.session{
-  border: 1px solid rgba(0,0,0,.08);
+
+.session {
+  border: 1px solid rgba(0, 0, 0, .08);
   border-radius: 14px;
   padding: 10px;
   cursor: pointer;
 }
-.session.on{
-  border-color: rgba(23,162,162,.45);
-  background: rgba(23,162,162,.08);
+
+.session.on {
+  border-color: rgba(23, 162, 162, .45);
+  background: rgba(23, 162, 162, .08);
 }
-.session-top{
-  display:flex;
+
+.session-top {
+  display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: baseline;
 }
-.session-title{
+
+.session-title {
   font-weight: 900;
-  color:#123;
+  color: #123;
   font-size: 13px;
 }
-.session-time{
+
+.session-time {
   font-size: 11px;
-  color:#6b7f7f;
+  color: #6b7f7f;
   white-space: nowrap;
 }
-.session-sub{
+
+.session-sub {
   margin-top: 6px;
   font-size: 12px;
-  color:#4f6464;
+  color: #4f6464;
 }
-.sheet-foot{
+
+.btn-del-session {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: all 0.2s;
+  padding: 4px;
+}
+
+/* 鼠标悬停在卡片上才显示垃圾桶，细节感满满 */
+.session:hover .btn-del-session {
+  opacity: 1;
+  color: #ff4d4f;
+}
+
+.btn-del-session:active {
+  transform: scale(0.9);
+}
+
+.sheet-foot {
   padding: 10px 12px;
-  border-top: 1px solid rgba(0,0,0,.06);
-  display:flex;
+  border-top: 1px solid rgba(0, 0, 0, .06);
+  display: flex;
   justify-content: flex-end;
+}
+
+/* 全屏加载遮罩 */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.loader-box {
+  text-align: center;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #17a2a2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 15px;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.sub-hint {
+  font-size: 12px;
+  color: #99a;
+  margin-top: 8px;
 }
 </style>
 

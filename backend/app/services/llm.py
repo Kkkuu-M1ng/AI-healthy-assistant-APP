@@ -64,3 +64,33 @@ def summarize_session_title(chat_content: str) -> str:
     except Exception as e:
         print(f"总结标题失败: {e}")
         return "健康咨询"    
+    
+def generate_health_plan(chat_history: list, persona: dict) -> dict:
+    """
+    专门用于在问诊结束时，总结全案并生成结构化数据
+    """
+    system_instruction = f"""
+    你是一个全科医生。请复盘以下这段医疗咨询对话，并结合用户的健康画像，给出最终的总结建议和待办任务。
+    
+    【用户画像】：{persona}
+    
+    【输出要求】：
+    1. 必须输出 JSON 格式。
+    2. 建议（new_advice）应包含原理说明。
+    3. 任务（new_tasks）必须具体可执行（如：每日3次，饭后30分钟）。
+    4. 如果对话内容不足以给出建议，请在 reply 中说明，并让 new_advice 和 new_tasks 为空。
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="qwen-plus",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": f"请总结这段对话并开具方案：{str(chat_history)}"}
+            ],
+            response_format={ "type": "json_object" }
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"生成方案失败: {e}")
+        return {"reply": "未能生成方案", "new_advice": [], "new_tasks": []}    

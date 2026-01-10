@@ -235,6 +235,17 @@
               <input v-model.number="memberDraft.age" type="number" class="input" min="0" max="120" />
             </label>
 
+            <div class="grid2">
+              <label class="field">
+                <div class="label">身高(cm)</div>
+                <input v-model.number="memberDraft.height" type="number" class="input" />
+              </label>
+              <label class="field">
+                <div class="label">体重(kg)</div>
+                <input v-model.number="memberDraft.weight" type="number" class="input" />
+              </label>
+            </div>
+
             <div class="field">
               <div class="label">健康标签</div>
               <div class="chips">
@@ -523,7 +534,10 @@ async function saveMember() {
       relation: memberDraft.relation,
       gender: memberDraft.gender,
       age: memberDraft.age,
-      tags: memberDraft.tags
+      height: memberDraft.height,
+      weight: memberDraft.weight,
+      tags: memberDraft.tags,
+      notes: memberDraft.notes 
     };
 
     if (editingMemberId.value === "new") {
@@ -534,6 +548,9 @@ async function saveMember() {
       const idx = members.value.findIndex(x => x.id === editingMemberId.value);
       if (idx >= 0) members.value[idx] = clone(memberDraft);
     }
+
+    await initData(); 
+
     memberDialog.value = false;
   } catch (e) {
     alert("操作失败");

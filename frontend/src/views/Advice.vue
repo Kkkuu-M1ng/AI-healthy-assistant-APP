@@ -155,7 +155,34 @@ function openTask(id) {
 </script>
 
 <style scoped>
-.page{ padding: 12px; box-sizing: border-box; }
+.page {
+  padding: 12px;
+  box-sizing: border-box;
+  /* 👇 关键属性 👇 */
+  height: 100vh;           /* 占据整个屏幕高度 */
+  overflow-y: auto;        /* 开启纵向滚动 */
+  display: flex;
+  flex-direction: column;
+  background-color: #f8fcfc; /* 给背景一个浅底色，滚动时更有质感 */
+}
+
+/* 2. 优化：隐藏滚动条（可选，让页面看起来更像原生 App） */
+.page::-webkit-scrollbar {
+  width: 0;
+  display: none;
+}
+
+/* 3. 增强安全区：确保最下面的任务不会被底部的 TabBar 挡住 */
+.safe-bottom {
+  height: 100px;           /* 稍微加高一点，留出呼吸感 */
+  flex-shrink: 0;          /* 防止安全区被压缩 */
+}
+
+/* 4. 细节优化：给建议和任务块加一个最小高度，防止数据为空时页面塌陷 */
+.block {
+  margin-top: 12px;
+  flex-shrink: 0;          /* 保证内容块不会因为 flex 布局被挤压 */
+}
 .head{
   background: linear-gradient(180deg, #d7f3f4 0%, #f7fbfb 70%);
   border: 1px solid #e7efef;

@@ -19,6 +19,7 @@ class MemberCreate(BaseModel):
     tags: list[str] | dict[str, dict] | None = None
     allergies: str | None = None 
     meds: str | None = None      
+    notes: str | None = None
 
 # 2. 新增 MemberUpdate (用于编辑，所有字段都是选填)
 class MemberUpdate(BaseModel):
@@ -31,6 +32,7 @@ class MemberUpdate(BaseModel):
     tags: list[str] | dict[str, dict] | None = None
     allergies: str | None = None # 🆕
     meds: str | None = None      # 🆕
+    notes: str | None = None
 
 class MemberOut(BaseModel):
     id: int
@@ -43,6 +45,7 @@ class MemberOut(BaseModel):
     tags: dict[str, dict] = {}
     allergies: str | None = None # 🆕
     meds: str | None = None      # 🆕
+    notes: str | None = None
 
 def dump_tags(tags: list[str]) -> str:
     # 如果前端传的是原来的列表格式 ['高血压', '肥胖']
@@ -89,6 +92,7 @@ def list_members(
             weight=m.weight,   # 🆕
             allergies=m.allergies, # 🆕
             meds=m.meds,       # 🆕
+            notes=m.notes,
             tags=load_tags(m.tags_json),
         )
         for m in rows
@@ -110,6 +114,7 @@ def create_member(
         weight=data.weight,   # 🆕
         allergies=data.allergies, # 🆕
         meds=data.meds,       # 🆕
+        notes=data.notes,
         tags_json=dump_tags(data.tags),
     )
     session.add(m)
@@ -126,6 +131,7 @@ def create_member(
         weight=m.weight,   # 🆕
         allergies=m.allergies, # 🆕
         meds=m.meds,       # 🆕
+        notes=m.notes,
         tags=load_tags(m.tags_json),
     )
 

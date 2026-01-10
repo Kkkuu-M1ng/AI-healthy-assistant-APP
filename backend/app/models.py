@@ -39,6 +39,8 @@ class FamilyMember(SQLModel, table=True):
     meds: str = ""           # 用药 (安全红线)
     special_status: str = "" # 特殊状态
     
+    notes: str = "" 
+    
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AdviceItem(SQLModel, table=True):
