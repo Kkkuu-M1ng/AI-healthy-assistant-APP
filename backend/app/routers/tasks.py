@@ -154,3 +154,22 @@ def create_task(
         detail=data.detail,
         logs=[],
     )
+
+@router.delete("/tasks/{task_id}")  # 💡 既然 main.py 已经有了 /api/tasks 前缀，这里只需收 ID
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_session),
+    uid: int = Depends(get_current_user_id)
+):
+    # 1. 查找任务
+    task = db.get(TaskItem, task_id)
+    
+    # 2. 安全检查：必须存在且属于当前用户
+    if not task or task.user_id != uid:
+        raise HTTPException(status_code=404, detail="任务不存在或无权操作")
+    
+    # 3. 执行删除
+    db.delete(task)
+    db.commit()
+    
+    return {"ok": True, "msg": "任务已删除"}

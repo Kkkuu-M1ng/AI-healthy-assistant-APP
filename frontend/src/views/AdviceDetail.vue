@@ -1,15 +1,15 @@
 <template>
   <PageShell tab="advice">
     <div class="page">
-      <!-- 顶部栏 -->
+      <!-- 顶部栏保持不变 -->
       <div class="nav">
         <button class="back" @click="router.back()">‹</button>
         <div class="title">建议详情</div>
         <div class="spacer"></div>
       </div>
 
-      <!-- 内容 -->
-      <div class="card">
+      <!-- 👇👇👇 重点修复：加上 v-if="advice" 👇👇👇 -->
+      <div v-if="advice" class="card">
         <div class="h1">{{ advice.title }}</div>
         <div class="sub">ID：{{ id }}</div>
 
@@ -21,7 +21,8 @@
         <div class="section">
           <div class="st">怎么做</div>
           <ul class="ul">
-            <li v-for="(x,i) in advice.steps" :key="i">{{ x }}</li>
+            <!-- 💡 这里的变量名要和你脚本里 map 出来的名字对应 -->
+            <li v-for="(x, i) in advice.steps" :key="i">{{ x }}</li>
           </ul>
         </div>
 
@@ -30,34 +31,54 @@
         </div>
       </div>
 
-      <!-- 预留给 tabbar 的安全区 -->
+      <!-- 💡 加一个加载中的提示，体验更好 -->
+      <div v-else class="empty">
+        正在调取电子病历...
+      </div>
+
       <div style="height: 80px;"></div>
     </div>
   </PageShell>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import PageShell from "../components/PageShell.vue";
+// 💡 引入 apiGet
+import { apiGet } from "../api/http";
 
 const route = useRoute();
 const router = useRouter();
 
+// 1. 定义变量
 const id = computed(() => route.params.id);
+const advice = ref(null); // 初始为空
+const loading = ref(true);
 
-// 先用假数据：后面我们再接入「个性化建议/任务」真实数据
-const advice = computed(() => {
-  // 你也可以按 id 做不同内容，这里先写一份固定模板
-  return {
-    title: "控制盐摄入，优先采用低盐饮食",
-    reason: "根据你的健康画像（示例），低盐饮食有助于血压与心血管风险管理。",
-    steps: [
-      "每日食盐建议≤5g，少吃腌制/加工食品。",
-      "外卖选择“少盐/不加酱”，汤尽量少喝。",
-      "连续 2 周记录变化，再调整策略。"
-    ],
-  };
+// 2. 页面加载时抓取真实数据
+async function fetchDetail() {
+  loading.value = true;
+  try {
+    // 调用后端：GET /api/advice/{id}
+    const res = await apiGet(`/advice/${id.value}`);
+    
+    // 💡 适配后端字段：
+    // 后端存的是 detail_json (字符串)，我们需要解析它
+    // 如果没有 detail_json，就给个默认数组
+    advice.value = {
+      ...res,
+      steps: res.detail ? res.detail : ["按照问诊时的医嘱执行", "如有不适请及时停用"]
+    };
+  } catch (e) {
+    console.error("加载建议详情失败", e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  fetchDetail();
 });
 </script>
 

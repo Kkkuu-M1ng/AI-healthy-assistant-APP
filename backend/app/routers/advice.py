@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from datetime import datetime
 import json
 
 from ..db import get_session
@@ -46,11 +47,20 @@ def list_advice(
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_user_id),
 ):
-    rows = session.exec(
-        select(AdviceItem)
-        .where(AdviceItem.user_id == uid, AdviceItem.member_id == member_id)
-        .order_by(AdviceItem.id.desc())
-    ).all()
+    # 💡 核心过滤逻辑：
+    # 1. 属于当前用户和成员
+    # 2. is_active 为 True
+    # 3. (expire_at 为空) 或者 (expire_at 大于当前时间)
+    now = datetime.utcnow()
+    
+    statement = select(AdviceItem).where(
+        AdviceItem.user_id == uid,
+        AdviceItem.member_id == member_id,
+        AdviceItem.is_active == True,
+        (AdviceItem.expire_at == None) | (AdviceItem.expire_at > now) # 👈 过滤过期数据
+    ).order_by(AdviceItem.id.desc())
+    
+    rows = session.exec(statement).all()
 
     return [
         AdviceListOut(
@@ -109,3 +119,19 @@ def create_advice(
         tags=data.tags,
         detail=data.detail,
     )
+
+@router.delete("/{advice_id}") # 💡 同理，这里只需收 ID
+def delete_advice(
+    advice_id: int,
+    db: Session = Depends(get_session),
+    uid: int = Depends(get_current_user_id)
+):
+    advice = db.get(AdviceItem, advice_id)
+    
+    if not advice or advice.user_id != uid:
+        raise HTTPException(status_code=404, detail="建议不存在或无权操作")
+    
+    db.delete(advice)
+    db.commit()
+    
+    return {"ok": True, "msg": "建议已删除"}

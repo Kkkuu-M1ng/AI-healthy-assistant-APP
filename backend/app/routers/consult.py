@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List
+from datetime import datetime, timedelta
 
 import json
 import os
@@ -65,13 +66,25 @@ def get_messages(session_id: int, db: Session = Depends(get_session)):
 
 @router.get("/sessions")
 def list_sessions(
+    member_id: int | None = None,
     db: Session = Depends(get_session),
     uid: int = Depends(get_current_user_id)
 ):
-    # 查出当前用户所有的会话，按时间倒序排
-    statement = select(ConsultSession).where(ConsultSession.user_id == uid).order_by(ConsultSession.created_at.desc())
-    results = db.exec(statement).all()
-    return results
+    try:
+        # 2. 构造查询语句
+        statement = select(ConsultSession).where(ConsultSession.user_id == uid)
+        
+        # 💡 如果传了 member_id，就只查这个人的历史记录
+        if member_id:
+            statement = statement.where(ConsultSession.member_id == member_id)
+            
+        statement = statement.order_by(ConsultSession.created_at.desc())
+        results = db.exec(statement).all()
+        
+        return results
+    except Exception as e:
+        print(f"❌ 列表查询失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取历史列表失败")
 
 # --------------------------
 # 3. 发送消息并获取回复 (Chat)
@@ -146,70 +159,72 @@ def generate_plan(
     db: Session = Depends(get_session), 
     uid: int = Depends(get_current_user_id)
 ):
-    # 1. 验证会话权限并获取 member_id
+    # 1. 验证权限
     session_obj = db.get(ConsultSession, session_id)
     if not session_obj or session_obj.user_id != uid:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    # 2. 获取该成员的画像和所有聊天记录
+    # 2. 获取成员画像和对话历史
     member = db.get(FamilyMember, session_obj.member_id)
     history_rows = db.exec(
         select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)
     ).all()
     history_payload = [{"role": m.role, "content": m.content} for m in history_rows]
 
-    # 3. 🚀 调用 AI 生成全案 (调用我们刚才写好的 llm 函数)
-    # 传入简要画像，让建议更精准
-    persona_brief = {
-        "age": member.age, 
-        "gender": member.gender, 
-        "tags": member.tags_json, 
-        "allergies": member.allergies
-    }
+    # 3. 调用 AI 总结
+    persona_brief = {"age": member.age, "gender": member.gender, "tags": member.tags_json, "allergies": member.allergies}
     ai_plan = generate_health_plan(history_payload, persona_brief)
 
-    # 4. 【核心存库逻辑】提取 AI 吐出来的结构化数据
+    # 4. 提取数据
     new_advices = ai_plan.get("new_advice", [])
     new_tasks = ai_plan.get("new_tasks", [])
 
-    # A. 遍历保存建议
+    # A. 【升级版】保存建议
     for item in new_advices:
-        # 这里做了个简单的类型保护，防止 AI 返回纯字符串
         title = item.get("title") if isinstance(item, dict) else str(item)
-        reason = item.get("reason", "根据本次问诊生成") if isinstance(item, dict) else ""
+        reason = item.get("reason", "根据问诊生成") if isinstance(item, dict) else ""
+        tags = item.get("tags", []) if isinstance(item, dict) else []
         
+        # 💡 核心逻辑：自动计算有效期
+        # 如果建议里提到“急性”、“感冒”、“发热”，给 7 天
+        # 默认给 30 天，长期的慢病建议可以设为 None (永久)
+        expire_days = 30 # 默认 30 天
+        text_for_check = (title + reason + str(tags)).lower()
+        
+        if any(word in text_for_check for word in ["感冒", "急性", "发烧", "临时"]):
+            expire_days = 7
+        elif any(word in text_for_check for word in ["慢病", "长期", "坚持", "高血压"]):
+            expire_days = 365 # 长期建议给一年
+            
         advice = AdviceItem(
             user_id=uid,
             member_id=member.id,
             title=title,
             reason=reason,
-            tags_json=json.dumps(item.get("tags", []) if isinstance(item, dict) else []),
-            detail_json="[]"
+            tags_json=json.dumps(tags, ensure_ascii=False),
+            # 👇 存入有效期 👇
+            expire_at=datetime.utcnow() + timedelta(days=expire_days),
+            is_active=True
         )
         db.add(advice)
 
-    # B. 遍历保存任务
+    # B. 保存任务 (保持原逻辑)
     for item in new_tasks:
         t_title = item.get("title") if isinstance(item, dict) else str(item)
-        
         task = TaskItem(
-            user_id=uid,
-            member_id=member.id,
-            title=t_title,
-            freq=item.get("freq", "由医生建议") if isinstance(item, dict) else "",
-            due=item.get("due", "尽快开始") if isinstance(item, dict) else "",
-            done=False,
-            detail_json="[]",
-            logs_json="[]"
+            user_id=uid, member_id=member.id, title=t_title,
+            freq=item.get("freq", "") if isinstance(item, dict) else "",
+            due=item.get("due", "") if isinstance(item, dict) else "",
+            done=False
         )
         db.add(task)
 
-    # 5. 最后一次性提交
+    # 5. 提交
     db.commit()
 
     return {
         "ok": True, 
-        "reply": ai_plan.get("reply", "方案已制定完成。"), 
+        "reply": ai_plan.get("reply"), 
         "count_advice": len(new_advices),
         "count_tasks": len(new_tasks)
     }

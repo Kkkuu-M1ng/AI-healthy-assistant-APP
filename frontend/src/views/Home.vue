@@ -34,7 +34,7 @@
           <!-- 💡 2. 循环显示真实的精简建议 -->
           <template v-if="adviceList.length > 0">
             <div v-for="adv in adviceList" :key="adv.id" class="mini">
-              <div class="mini-text">{{ adv.title }}</div>
+              <div class="mini-text" @click="router.push(`/advice/${adv.id}`)">{{ adv.title }} </div>
             </div>
           </template>
           <div v-else class="mini">
@@ -57,7 +57,7 @@
 
           <div class="history">
             <!-- 💡 修改 1：循环里直接拿 h 即可，Key 建议用真实的 id -->
-            <div v-for="h in consultHistory" :key="h.id" class="history-item">
+            <div v-for="h in consultHistory" :key="h.id" class="history-item" @click="goHistoryConsult(h)">
               <!-- 💡 修改 2：重点！这里必须写 h.title -->
               <span style="color: #000;">{{ h.title }}</span>
             </div>
@@ -138,8 +138,6 @@ onMounted(async () => {
       activeMemberId.value = res[0].id;
     }
 
-
-
     // D. 初始加载建议预览
     if (activeMemberId.value) {
       loadPreviewData(activeMemberId.value);
@@ -156,6 +154,7 @@ watch(activeMemberId, (newId) => {
   if (newId) {
     localStorage.setItem(LS_MEMBER_KEY, newId); // 全局同步钥匙
     loadPreviewData(newId); // 重新加载下方的建议
+    loadFilteredHistory(newId);
   }
 });
 
@@ -192,6 +191,32 @@ async function loadPreviewData(memberId) {
     adviceList.value = [];
   }
 }
+
+async function loadFilteredHistory(mid) {
+  if (!mid) return;
+  try {
+    // 👇 向后端请求时，带上 member_id 参数
+    const sessions = await apiGet(`/consult/sessions?member_id=${mid}`);
+    consultHistory.value = sessions.slice(0, 2); // 首页还是只看最近两条
+  } catch (e) {
+    console.error("加载成员历史失败");
+    consultHistory.value = [];
+  }
+}
+
+function goHistoryConsult(session) {
+  // session 是你循环里的那个对象 h
+  console.log("正在准备跳转到历史问诊:", session.id);
+  
+  router.push({
+    path: '/consult',
+    query: { 
+      session_id: session.id,    // 后端的会话ID
+      member_id: session.member_id // 对应的成员ID
+    }
+  });
+}
+
 </script>
 
 <style scoped>
@@ -373,12 +398,31 @@ async function loadPreviewData(memberId) {
   font-size: 18px;
 }
 
+/* 修改个性化建议的列表项样式 */
 .mini {
   border: 1px solid #e6f2f2;
   background: #ffffff;
   border-radius: 6px;
   padding: 8px;
   margin-bottom: 8px;
+  
+  /* 👇👇👇 核心修复：把鼠标变成小手 👇👇👇 */
+  cursor: pointer; 
+  
+  /* 💡 增加一个平滑的过渡效果 */
+  transition: all 0.2s ease;
+}
+
+/* 💡 顾问建议：增加一个悬浮效果，让用户感觉它“被点亮了” */
+.mini:hover {
+  background: #f0fafa;      /* 悬浮时颜色稍微变浅蓝一点点 */
+  border-color: #17a2a2;    /* 边框变成主色调 */
+  transform: translateX(4px); /* 轻轻向右移动一点，产生互动感 */
+}
+
+/* 💡 增加点击瞬间的反馈 */
+.mini:active {
+  transform: scale(0.98);   /* 点击瞬间微微缩小，像被按下去一样 */
 }
 
 .input-like {
@@ -414,7 +458,18 @@ async function loadPreviewData(memberId) {
   padding: 6px 8px;
   font-size: 12px;
   cursor: pointer;
-  
+}
+
+/* 💡 顾问建议：增加一个悬浮效果，让用户感觉它“被点亮了” */
+.history-item:hover {
+  background: #f0fafa;      /* 悬浮时颜色稍微变浅蓝一点点 */
+  border-color: #17a2a2;    /* 边框变成主色调 */
+  transform: translateX(4px); /* 轻轻向右移动一点，产生互动感 */
+}
+
+/* 💡 增加点击瞬间的反馈 */
+.history-item:active {
+  transform: scale(0.98);   /* 点击瞬间微微缩小，像被按下去一样 */
 }
 
 /* 按钮 */

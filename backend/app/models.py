@@ -53,8 +53,13 @@ class AdviceItem(SQLModel, table=True):
     tags_json: str = Field(default="[]")     # list[str]
     detail_json: str = Field(default="[]")   # list[str]
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    # 状态位：True表示显示，False表示用户手动隐藏
+    is_active: bool = Field(default=True)
+    
+    # 过期时间：默认生成时计算（如果是空，代表永久有效）
+    expire_at: Optional[datetime] = Field(default=None) 
 
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class TaskItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

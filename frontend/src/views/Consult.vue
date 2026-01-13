@@ -145,10 +145,11 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import PageShell from "../components/PageShell.vue";
 import { apiPost, getToken, apiGet } from '../api/http';
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 
 const LS_MEMBER_KEY = "active_member_id";
 const router = useRouter();
+const route = useRoute();
 const isGenerating = ref(false);
 
 function handleManualNewSession() {
@@ -221,94 +222,115 @@ async function handleGeneratePlan() {
 
 // ====== 唯一合法的初始化挂载 ======
 onMounted(async () => {
-  console.log("🚀 正在初始化问诊环境...");
+  console.log("🚀 正在初始化问诊室...");
 
   try {
-    // --- 第一步：对账（清理本地已失效的记录） ---
+    // --- 第一步：对账（清理本地已失效的记录）保持现状 ---
     const serverSessions = await apiGet("/consult/sessions");
     const serverIds = serverSessions.map(s => s.id);
-
-    // 加载本地数据
     const localData = loadSessions();
 
-    // 过滤掉那些后端已经找不到的 serverId
     const syncedSessions = localData.filter(localSess => {
-      if (!localSess.serverId) return true; // 还没领号的暂留
-      return serverIds.includes(localSess.serverId); // 后端有的才留
+      if (!localSess.serverId) return true; 
+      return serverIds.includes(localSess.serverId);
     });
+    sessions.value = syncedSessions;
 
-    // --- 第二步：恢复状态 ---
-    if (syncedSessions.length > 0) {
-      sessions.value = syncedSessions;
-      // 默认选中第一个（也就是最近聊过的那个）
-      if (!currentSessionId.value) {
-        currentSessionId.value = syncedSessions[0].id;
+    // --- 第二步：逻辑分流（这是你要的改动） ---
+    const historySessionId = route.query.session_id; // 从 URL 获取历史 ID
+
+    if (historySessionId) {
+      // 场景 A：从首页点历史记录进来的
+      console.log("📂 正在恢复指定的历史记录:", historySessionId);
+      // 在同步后的列表里找这一条
+      const found = sessions.value.find(s => s.serverId == historySessionId);
+      if (found) {
+        currentSessionId.value = found.id;
+      } else {
+        // 如果本地没存这段话（比如换了浏览器），调接口拿
+        await loadExistingSession(historySessionId);
       }
-      console.log("✅ 已成功恢复上一轮对话");
     } else {
-      // 如果全空（比如新用户或刚清空了），建一个前端“壳子”，不调接口！
-      console.log("📝 欢迎新用户，已建立空白问诊单");
+      // 场景 B：直接点 Tab 进来的 -> 【强制开新局，且不领号】
+      console.log("📝 准备好一张空白问诊单...");
       const shell = {
         id: uid(),
-        serverId: null, // 👈 说话时再领号
+        serverId: null, // 👈 说话时再领号，现在数据库里什么都不会增加
         mode: mode.value,
         title: "新问诊会话",
         messages: defaultWelcomeMessages(),
-        updatedAt: nowDateTime()
+        updatedAt: nowDateTime(),
+        preview: "（新问诊）"
       };
-      sessions.value = [shell];
+      
+      // 把新白纸插到最前面，并设为当前活跃
+      sessions.value.unshift(shell);
       currentSessionId.value = shell.id;
     }
 
-    saveSessions(); // 同步结果到本地存储
+    saveSessions(); // 存一下对账和开局后的结果
 
   } catch (e) {
-    console.warn("⚠️ 初始化对账失败，将使用本地缓存", e);
+    console.warn("⚠️ 初始化失败，将使用本地缓存", e);
     sessions.value = loadSessions();
   }
 
-  // --- 第三步：安全区与滚动监听 ---
+  // --- 第三步：监听与滚动 ---
   window.addEventListener("click", onGlobalClick);
   scrollToBottom();
 });
 
-
-async function startFreshSession() {
-  loading.value = true;
+/**
+ * 辅助函数：如果本地没缓存这对话，从后端抓
+ */
+async function loadExistingSession(sid) {
   try {
-    // 1. 获取当前选中的成员（确保知道是为谁看病）
-    const mid = localStorage.getItem("active_member_id") || 1;
-
-    // 2. 核心：向后端请求一个新的会话 ID
-    // 每次刷新或进入，后端都会在 ConsultSession 表里产生一条新记录
-    const res = await apiPost(`/consult/sessions?member_id=${mid}`, {});
-
-    // 3. 在前端创建一个全新的 session 对象
-    const newSessId = uid(); // 前端用的唯一标识
+    const msgs = await apiGet(`/consult/${sid}/messages`);
     const s = {
-      id: newSessId,
-      serverId: res.id, // 👈 存入后端刚给的新 ID
-      mode: mode.value,
-      title: `问诊 ${sessions.value.length + 1}`,
+      id: uid(),
+      serverId: sid,
+      mode: "common",
+      title: "历史追溯",
       updatedAt: nowDateTime(),
-      preview: "（新问诊）",
-      messages: defaultWelcomeMessages(), // 只加载欢迎语，不加载历史
+      messages: msgs.map(m => ({
+        id: m.id, role: m.role, type: "text", text: m.content, time: "历史"
+      }))
     };
-
-    // 4. 把新会话塞进列表最前面，并设为当前活跃会话
     sessions.value.unshift(s);
-    currentSessionId.value = newSessId;
-
-    // 5. 持久化到本地，防止刷新丢了
-    saveSessions();
-
-    console.log("✨ 专属问诊室已开启，后端ID:", res.id);
+    currentSessionId.value = s.id;
   } catch (e) {
-    console.error("开启新问诊失败", e);
-    alert("无法开启问诊，请检查网络");
-  } finally {
-    loading.value = false;
+    console.error("抓取历史失败");
   }
+}
+
+function startTemporarySession() {
+  // 1. 构造一个 serverId 为 null 的“虚拟本子”
+  const tempSess = {
+    id: uid(),           // 前端用的 UUID
+    serverId: null,      // 👈 重点：现在是空的，数据库里还没它
+    mode: mode.value,
+    title: "新问诊会话",
+    updatedAt: nowDateTime(),
+    preview: "（尚未开始）",
+    messages: [{
+      id: uid(),
+      role: "ai",
+      type: "text",
+      time: nowTime(),
+      text: "你好，我是AI问诊助手。请描述你的症状，我会为你分析。"
+    }]
+  };
+
+  // 2. 将这个虚拟本子设为当前活跃页面
+  // 💡 注意：我们不需要把它 unshift 进 sessions 列表，
+  // 只有当用户说话领号后，再塞进列表存 localStorage
+  currentSessionId.value = tempSess.id;
+  
+  // 我们建立一个临时的活跃对象
+  // 假设你的 sessions 是一个 ref 数组
+  sessions.value = [tempSess, ...sessions.value]; 
+  
+  console.log("✨ 虚拟页面已就绪，等待首句发言后触发后端注册。");
 }
 
 /** ============ 配置：四类模式 ============ */

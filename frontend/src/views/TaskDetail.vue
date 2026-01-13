@@ -8,7 +8,7 @@
         <div class="spacer"></div>
       </div>
 
-      <div class="card">
+      <div div v-if="task" class="card">
         <div class="h1">{{ task.title }}</div>
         <div class="sub">ID：{{ id }} · {{ task.freq }} · {{ task.due || "长期任务" }}</div>
 
@@ -50,68 +50,68 @@
 </template>
 
 <script setup>
-import { computed, ref, watchEffect } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import PageShell from "../components/PageShell.vue";
+// 💡 引入 apiGet 和 apiPost
+import { apiGet, apiPost } from "../api/http";
 
 const route = useRoute();
 const router = useRouter();
 
 const id = computed(() => route.params.id);
+const task = ref(null);
+const loading = ref(true);
 
-// 假数据（后面我们再接“任务列表”的真实数据）
-const task = computed(() => ({
-  title: "每日测量并记录血压",
-  freq: "每天 1 次",
-  due: "",
-  steps: [
-    "固定时间测量（建议早上起床后、服药前）。",
-    "坐位休息 5 分钟后再测量。",
-    "记录收缩压/舒张压/心率，便于趋势分析。"
-  ],
-}));
-
-// ✅ 本地状态：每个 task id 单独保存
-const LS_KEY = computed(() => `ai_task_state_${id.value}`);
-
+// 状态控制
 const done = ref(false);
 const logs = ref([]);
 
-function loadState() {
+// 1. 加载真实数据
+async function loadTaskDetail() {
+  loading.value = true;
   try {
-    const raw = localStorage.getItem(LS_KEY.value);
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    done.value = !!s.done;
-    logs.value = Array.isArray(s.logs) ? s.logs : [];
-  } catch {}
+    const res = await apiGet(`/tasks/${id.value}`);
+    task.value = {
+      ...res,
+      // 解析执行要点
+      steps: res.detail && res.detail.length > 0 ? res.detail : ["遵照AI制定的频率执行"]
+    };
+    done.value = res.done;
+    logs.value = res.logs || [];
+  } catch (e) {
+    console.error("获取任务详情失败", e);
+  } finally {
+    loading.value = false;
+  }
 }
 
-function saveState() {
-  localStorage.setItem(
-    LS_KEY.value,
-    JSON.stringify({ done: done.value, logs: logs.value })
-  );
+// 2. 核心功能：标记完成
+async function toggleDone() {
+  if (done.value) {
+    alert("该任务已完成");
+    return;
+  }
+
+  if (!confirm("确认完成此项任务并同步健康画像吗？")) return;
+
+  try {
+    // 💡 调动咱们昨天写的“进化引擎”接口
+    const res = await apiPost(`/tasks/${id.value}/complete`, {});
+    
+    if (res.ok) {
+      done.value = true;
+      // 模拟添加一条本地记录
+      logs.value.unshift(new Date().toLocaleString());
+      alert("太棒了！你的健康风险值已降低。");
+    }
+  } catch (e) {
+    alert("打卡失败，请稍后再试");
+  }
 }
 
-function nowStamp() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}/${dd} ${hh}:${mi}`;
-}
-
-function toggleDone() {
-  done.value = !done.value;
-  if (done.value) logs.value.unshift(nowStamp());
-  saveState();
-}
-
-// 路由 id 变化时重新加载
-watchEffect(() => {
-  loadState();
+onMounted(() => {
+  loadTaskDetail();
 });
 </script>
 
