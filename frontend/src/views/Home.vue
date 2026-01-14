@@ -18,9 +18,37 @@
             <div class="avatar-name">{{ m.name }}</div>
           </div>
         </div>
-        <div class="ai-status-bar">
-          <span class="ai-sparkle">✨</span>
-          <span class="ai-msg">{{ aiGreeting }}</span>
+        <div class="dashboard">
+          <!-- 1. BMI 仪表盘 -->
+          <div class="dash-item bmi-box">
+            <div class="dash-label">健康体征 BMI</div>
+            <div class="bmi-value" :style="{ color: bmiInfo.color }">{{ bmiInfo.val || '--' }}</div>
+            <div class="bmi-bar-bg">
+              <div class="bmi-pointer" :style="{ left: bmiInfo.pos + '%', backgroundColor: bmiInfo.color }"></div>
+            </div>
+            <div class="dash-status">{{ bmiInfo.status }}</div>
+          </div>
+
+          <!-- 2. 风险信号灯 (标签) -->
+          <div class="dash-item risk-box">
+            <div class="dash-label">核心风险</div>
+            <div class="risk-tags">
+              <div v-for="(val, name) in activeMember?.tags" :key="name" class="risk-dot" :class="'lv-' + val.level">
+                {{ name }}
+              </div>
+              <div v-if="!activeMember?.tags || Object.keys(activeMember.tags).length === 0" class="none-text">暂无风险
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 任务能量环 -->
+          <div class="dash-item task-box">
+            <div class="dash-label">任务概览</div>
+            <div class="task-circle">
+              <span class="task-num">{{ taskStats.done }}/{{ taskStats.total }}</span>
+            </div>
+            <div class="dash-status">总进度 {{ Math.round((taskStats.done / taskStats.total || 0) * 100) }}%</div>
+          </div>
         </div>
       </div>
     </div>
@@ -114,6 +142,42 @@ const wikiCards = [
   { title: "糖尿病知识" }
 ];
 
+// 1. 任务进度计算
+const taskStats = ref({ total: 0, done: 0 });
+
+async function loadTaskStats(mid) {
+  try {
+    const tasks = await apiGet(`/tasks?member_id=${mid}`);
+    taskStats.value = {
+      total: tasks.length,
+      done: tasks.filter(t => t.done).count || tasks.filter(t => t.done).length
+    };
+  } catch (e) {
+    taskStats.value = { total: 0, done: 0 };
+  }
+}
+
+// 2. BMI 状态计算
+const activeMember = computed(() => members.value.find(m => m.id === activeMemberId.value));
+
+const bmiInfo = computed(() => {
+  const m = activeMember.value;
+  if (!m || !m.height || !m.weight) return { val: 0, status: '未知', color: '#ccc', pos: 0 };
+
+  const h = m.height / 100;
+  const val = (m.weight / (h * h)).toFixed(1);
+
+  let status = '正常';
+  let color = '#10b981'; // 绿
+  let pos = (val - 15) / (35 - 15) * 100; // 计算在进度条上的百分比位置
+
+  if (val < 18.5) { status = '偏瘦'; color = '#3498db'; }
+  else if (val > 24 && val <= 28) { status = '偏胖'; color = '#f1c40f'; }
+  else if (val > 28) { status = '肥胖'; color = '#e74c3c'; }
+
+  return { val, status, color, pos: Math.min(Math.max(pos, 0), 100) };
+});
+
 // 2. 初始化：获取用户信息和成员列表
 onMounted(async () => {
   try {
@@ -155,6 +219,7 @@ watch(activeMemberId, (newId) => {
     localStorage.setItem(LS_MEMBER_KEY, newId); // 全局同步钥匙
     loadPreviewData(newId); // 重新加载下方的建议
     loadFilteredHistory(newId);
+    loadTaskStats(newId); // 👈 联动任务统计
   }
 });
 
@@ -197,7 +262,7 @@ async function loadFilteredHistory(mid) {
   try {
     // 👇 向后端请求时，带上 member_id 参数
     const sessions = await apiGet(`/consult/sessions?member_id=${mid}`);
-    consultHistory.value = sessions.slice(0, 2); // 首页还是只看最近两条
+    consultHistory.value = sessions.slice(0, 3); // 首页还是只看最近两条
   } catch (e) {
     console.error("加载成员历史失败");
     consultHistory.value = [];
@@ -207,10 +272,10 @@ async function loadFilteredHistory(mid) {
 function goHistoryConsult(session) {
   // session 是你循环里的那个对象 h
   console.log("正在准备跳转到历史问诊:", session.id);
-  
+
   router.push({
     path: '/consult',
-    query: { 
+    query: {
       session_id: session.id,    // 后端的会话ID
       member_id: session.member_id // 对应的成员ID
     }
@@ -272,34 +337,105 @@ function goHistoryConsult(session) {
   display: none;
 }
 
-.ai-status-bar {
-  padding: 8px 24px;
-  /* 上下4px，左边空出24px（跟头像对齐或略微缩进） */
-  margin-top: 12px;
-  /* 紧贴头像栏下方 */
-  margin-bottom: 4px;
-  margin-right: 12px;
-  margin-left: -16px;
+.dashboard {
+  display: grid;
+  /* 💡 关键：使用 1fr 1fr 1fr，强行让三列平均分配宽度，不被内容撑开 */
+  grid-template-columns: repeat(3, 1fr); 
+  gap: 10px;
+  padding: 0 16px; /* 加大两边的 Margin，让它和顶部的头像栏对齐 */
+  margin-top: 15px;
+  margin-bottom: -15px;
+  margin-right: 24px;
+  margin-left: -4px;
 }
 
-/* 文字样式：灰色、小号、多行左对齐 */
-.ai-msg {
-  font-size: 12px;
-  /* 字号调小 */
+/* 2. 修正小卡片：统一高度和重心 */
+.dash-item {
+  background: #fff;
+  border: 1px solid #eef5f5;
+  border-radius: 16px;
+  padding: 12px 8px; /* 减小左右 padding，防止内部内容挤爆 */
+  
+  display: flex;
+  flex-direction: column;
+  align-items: center;      /* 💡 核心：所有内容水平居中 */
+  justify-content: center;   /* 💡 核心：所有内容垂直居中 */
+  
+  height: 145px;            /* 💡 核心：强行固定一个高度，确保排成一排 */
+  box-sizing: border-box;
+  box-shadow: 0 2px 8px rgba(23,162,162,0.03);
+}
+
+.dash-label {
+  font-size: 11px;
   color: #8a9999;
-  /* 阴影感的深灰色 */
-  line-height: 1.6;
-  /* 增加行高，多行时不拥挤 */
-  text-align: left;
-  /* 左对齐 */
-  white-space: pre-wrap;
-  /* 支持逻辑中的换行符 */
-  font-weight: 400;
-  /* 不要太粗，显得轻盈 */
-
-  /* 增加一个非常淡的文字阴影，增加质感（可选） */
-  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.8);
+  font-weight: 900;
+  margin-bottom: auto; /* 把标签推到最顶 */
 }
+
+.dash-status {
+  margin-top: auto;   /* 把状态文字推到最底 */
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* BMI 样式 */
+.bmi-value { font-size: 18px; font-weight: 900; margin: 4px 0; }
+.bmi-bar-bg {
+  width: 90%;               /* 不要占满 100%，留点呼吸感 */
+  height: 4px;
+  background: linear-gradient(to right, #3498db, #10b981, #f1c40f, #e74c3c);
+  border-radius: 2px;
+  position: relative;
+  margin: 10px 0 6px;
+}
+.bmi-pointer {
+  width: 6px; height: 6px; border-radius: 50%;
+  position: absolute; top: -1px; transform: translateX(-50%);
+  border: 1px solid #fff;
+}
+
+/* 风险标签样式 */
+.risk-tags {
+  display: flex;
+  flex-direction: column;   /* 👈 关键：改为垂直排列，让字有足够的水平空间 */
+  align-items: center;      /* 居中 */
+  gap: 6px;                 /* 标签间距大一点 */
+  width: 100%;
+  margin: 6px 0;
+}
+
+/* 2. 重点优化单个标签：更有分量 */
+.risk-dot {
+  width: 85%;               /* 宽度占格子的 85%，看起来更有条状感 */
+  font-size: 11px;          /* 字号稍微调大 1-2px */
+  padding: 4px 0;           /* 增加上下内边距 */
+  border-radius: 6px;       /* 稍微硬朗一点的圆角 */
+  color: #fff;
+  font-weight: 800;         /* 字体加粗，增强可读性 */
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* 淡淡的投影让字“浮”起来 */
+  
+  /* 💡 增加一个点缀 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.lv-3 { background: #e74c3c; } /* 高危红 */
+.lv-2 { background: #f39c12; } /* 橙色 */
+.lv-1 { background: #3498db; } /* 蓝色 */
+.none-text { font-size: 10px; color: #ccc; margin-top: 10px; }
+
+/* 任务圆环样式 */
+.task-circle {
+  width: 34px; height: 34px;
+  border: 3px solid #17a2a2;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 4px 0;
+}
+.task-num { font-size: 11px; font-weight: bold; color: #17a2a2; }
+.dash-status { font-size: 10px; color: #333; }
 
 /* 2. 内层轨道：负责让成员排成一排 */
 .avatars {
@@ -405,24 +541,28 @@ function goHistoryConsult(session) {
   border-radius: 6px;
   padding: 8px;
   margin-bottom: 8px;
-  
+
   /* 👇👇👇 核心修复：把鼠标变成小手 👇👇👇 */
-  cursor: pointer; 
-  
+  cursor: pointer;
+
   /* 💡 增加一个平滑的过渡效果 */
   transition: all 0.2s ease;
 }
 
 /* 💡 顾问建议：增加一个悬浮效果，让用户感觉它“被点亮了” */
 .mini:hover {
-  background: #f0fafa;      /* 悬浮时颜色稍微变浅蓝一点点 */
-  border-color: #17a2a2;    /* 边框变成主色调 */
-  transform: translateX(4px); /* 轻轻向右移动一点，产生互动感 */
+  background: #f0fafa;
+  /* 悬浮时颜色稍微变浅蓝一点点 */
+  border-color: #17a2a2;
+  /* 边框变成主色调 */
+  transform: translateX(4px);
+  /* 轻轻向右移动一点，产生互动感 */
 }
 
 /* 💡 增加点击瞬间的反馈 */
 .mini:active {
-  transform: scale(0.98);   /* 点击瞬间微微缩小，像被按下去一样 */
+  transform: scale(0.98);
+  /* 点击瞬间微微缩小，像被按下去一样 */
 }
 
 .input-like {
@@ -462,14 +602,18 @@ function goHistoryConsult(session) {
 
 /* 💡 顾问建议：增加一个悬浮效果，让用户感觉它“被点亮了” */
 .history-item:hover {
-  background: #f0fafa;      /* 悬浮时颜色稍微变浅蓝一点点 */
-  border-color: #17a2a2;    /* 边框变成主色调 */
-  transform: translateX(4px); /* 轻轻向右移动一点，产生互动感 */
+  background: #f0fafa;
+  /* 悬浮时颜色稍微变浅蓝一点点 */
+  border-color: #17a2a2;
+  /* 边框变成主色调 */
+  transform: translateX(4px);
+  /* 轻轻向右移动一点，产生互动感 */
 }
 
 /* 💡 增加点击瞬间的反馈 */
 .history-item:active {
-  transform: scale(0.98);   /* 点击瞬间微微缩小，像被按下去一样 */
+  transform: scale(0.98);
+  /* 点击瞬间微微缩小，像被按下去一样 */
 }
 
 /* 按钮 */

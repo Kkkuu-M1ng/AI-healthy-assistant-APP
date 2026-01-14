@@ -467,7 +467,7 @@ function addProfileTag() {
 }
 
 // ====== 成员管理 ======
-const relationPreset = ["父亲", "母亲", "丈夫", "妻子", "孩子", "爷爷", "奶奶"];
+const relationPreset = ["父亲", "母亲", "丈夫", "妻子", "孩子", "爷爷", "奶奶", "姐姐"];
 
 const memberDialog = ref(false);
 const memberDialogTitle = ref("新增成员");

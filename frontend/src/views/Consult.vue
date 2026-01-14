@@ -67,11 +67,11 @@
 
       <!-- 输入区 -->
       <div class="inputbar">
-        <button class="plus" @click="togglePlusMenu" title="更多">
+        <button class="plus" @click.stop="togglePlusMenu" title="更多">
           ＋
         </button>
 
-        <textarea v-model="input" class="input" rows="2" placeholder="描述症状：持续多久？是否发热/腹痛/咳嗽？有无基础病/用药？"
+        <textarea v-model="input" class="input" rows="2" 
           @keydown.enter.exact.prevent="sendText" />
 
         <button class="send" :disabled="!canSend" @click="sendText">
@@ -207,7 +207,7 @@ async function handleGeneratePlan() {
     const res = await apiPost(`/consult/${sid}/generate_plan`, {});
 
     if (res.ok) {
-      alert(`🎉 方案生成成功！\nAI 医生为您制定了 ${res.count_advice} 条新建议。`);
+      alert(`🎉 方案生成成功！`);
 
       // 5. 【高光时刻】：自动跳转到建议页查看成果
       router.push('/advice');
@@ -678,39 +678,71 @@ function fileToDataUrl(file) {
 
 async function onFileChange(e) {
   const file = e.target.files?.[0];
-  e.target.value = "";
   if (!file) return;
 
+  // 1. 立即清空选择器，防止下次选同一张图不触发
+  e.target.value = "";
   plusMenu.value = false;
 
-  const dataUrl = await fileToDataUrl(file);
+  // 2. 使用 FileReader 读取图片
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  
+  reader.onload = async () => {
+    const base64WithPrefix = reader.result; // 带有 data:image/jpeg;base64, 前缀
+    
+    // 3. UI 表现：先在聊天界面显示这张图
+    currentSession.value.messages.push({
+      id: uid(),
+      role: "user",
+      type: "image",
+      imageDataUrl: base64WithPrefix,
+      time: nowTime(),
+    });
 
-  // 先把图片消息插入对话
-  currentSession.value.messages.push({
-    id: uid(),
-    role: "user",
-    type: "image",
-    time: nowTime(),
-    text: "（上传图片）",
-    imageDataUrl: dataUrl,
-  });
+    // 4. 准备数据发送
+    // 💡 关键：剥离前缀，只把纯 Base64 字符串发给后端
+    const pureBase64 = base64WithPrefix.split(',')[1];
+    
+    await sendWithImage(pureBase64);
+  };
+}
 
-  touchSessionPreview();
+async function sendWithImage(base64Data) {
+  loading.value = true;
   scrollToBottom();
 
-  loading.value = true;
   try {
-    const reply = await callAI(mode.value, { text: "", hasImage: true });
+    // 1. 确保已领号 (serverId)
+    const sid = await ensureBackendSession(currentSession.value);
+
+    // 2. 调用后端 chat 接口
+    // 💡 注意：content 我们给一个默认的引导词，base64 放在 Body 里
+    const res = await apiPost(`/consult/${sid}/chat?content=请分析这张图片中的健康问题`, {
+      image_base64: base64Data
+    });
+
+    // 3. 将 AI 的分析结果显示出来
     currentSession.value.messages.push({
       id: uid(),
       role: "ai",
       type: "text",
-      time: nowTime(),
-      text: reply,
+      text: res.content, // 后端返回的 ChatMessage.content
+      time: nowTime()
     });
-    touchSessionPreview();
+
+    // 4. 💡 顾问小贴士：给用户一个画像更新的提示
+    // 因为后端现在会自动贴标签，我们在这里可以给用户一点正反馈
+    console.log("检测到可能的画像进化信号...");
+    
+  } catch (err) {
+    console.error("识图请求失败", err);
+    currentSession.value.messages.push({
+      id: uid(), role: "ai", type: "text", text: "抱歉，由于网络原因，我没看清那张图。", time: nowTime()
+    });
   } finally {
     loading.value = false;
+    saveSessions(); // 保存聊天记录到本地
     scrollToBottom();
   }
 }
@@ -955,55 +987,70 @@ onBeforeUnmount(() => {
 
 /* 输入区 */
 .inputbar {
-  position: relative;
+  display: flex;
+  align-items: center;    /* 👈 垂直居中 */
+  gap: 10px;              /* 间距 */
+  padding: 10px 16px;
   background: #fff;
-  border: 1px solid #e7efef;
-  border-radius: 14px;
-  padding: 10px;
-  display: grid;
-  grid-template-columns: 40px 1fr 74px;
-  gap: 10px;
-  align-items: end;
-}
-
-.plus {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, .08);
-  background: #fff;
-  font-size: 18px;
-  cursor: pointer;
-}
-
-.input {
-  width: 100%;
-  resize: none;
+  border-top: 1px solid #f0f4f4;
+  height: 60px;           /* 👈 给容器一个固定总高度 */
   box-sizing: border-box;
+}
+
+/* 2. 加号按钮：彻底居中 */
+.plus {
+  width: 40px;            /* 👈 宽度与高度保持一致，呈正方形 */
+  height: 40px;
+  background: #fff;
   border: 1px solid #e7efef;
   border-radius: 12px;
-  padding: 10px;
-  font-size: 13px;
+  font-size: 24px;        /* 加号大一点 */
+  color: #17a2a2;
+  cursor: pointer;
+  flex-shrink: 0;
+  
+  /* 💡 绝杀：使用 grid 确保加号死死钉在正中心 */
+  display: grid;
+  place-items: center; 
+  padding: 0;
+}
+
+/* 3. 输入框：高度对齐，禁止拉伸 */
+.input {
+  flex: 1;                /* 占据剩余所有空间 */
+  height: 40px;           /* 👈 与加号、发送按钮高度完全一致 */
+  border: 1px solid #e7efef;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
   outline: none;
+  resize: none;           /* 👈 禁止用户手动拉伸 */
+  box-sizing: border-box; /* 👈 确保 Padding 不会撑大高度 */
+  line-height: 22px;      /* 调整文字行高，使其看起来在垂直中心 */
+}
+
+/* 4. 发送按钮：高度对齐 */
+.send {
+  width: 70px;            /* 稍微宽一点 */
+  height: 40px;           /* 👈 同样是 40px */
+  background: #17a2a2;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-weight: 900;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .input:focus {
   border-color: rgba(23, 162, 162, .55);
-}
-
-.send {
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid #17a2a2;
-  background: #17a2a2;
-  color: #fff;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.send:disabled {
-  opacity: .55;
-  cursor: not-allowed;
 }
 
 /* + 菜单 */
