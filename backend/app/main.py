@@ -12,6 +12,7 @@ from .routers import members
 from .routers import advice
 from .routers import tasks
 from .routers import consult 
+from .routers import wiki 
 
 
 
@@ -24,6 +25,7 @@ app.include_router(members.router, prefix="/api")
 app.include_router(advice.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(consult.router, prefix="/api")
+app.include_router(wiki.router, prefix="/api")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

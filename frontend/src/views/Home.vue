@@ -1,5 +1,6 @@
 <template>
   <PageShell tab="home">
+    <div class="home-container"> <!-- 💡 确保最外层有这个类名 -->
     <div class="top-bg">
       <div class="greet">
         <!-- 💡 1. 绑定真实昵称 -->
@@ -104,23 +105,43 @@
       </div>
 
       <!-- 健康百科 (保持原样，后期可对接接口) -->
-      <div class="wiki">
-        <div class="wiki-head">
+      <div class="wiki-section">
+        <!-- 1. 顶部入口 -->
+        <div class="wiki-nav" @click="router.push('/wiki')">
           <div class="wiki-title">健康百科</div>
-          <button class="arrow" @click="router.push('/wiki')">→</button>
+          <div class="wiki-arrow">查看全部 →</div>
         </div>
-        <div class="wiki-grid">
-          <div v-for="w in wikiCards" :key="w.title" class="wiki-card">
-            <div class="wiki-card-title">{{ w.title }}</div>
+
+        <!-- 2. 下部轮播区 -->
+        <div class="wiki-carousel" ref="carouselRef">
+          <div v-for="article in wikiList" :key="article.id" class="wiki-slide"
+            @click="router.push(`/wiki/${article.id}`)">
+            <!-- 背景图 (如果没有存图，我们就用占位色块或网图) -->
+            <img :src="article.cover_url || 'https://picsum.photos/400/200?random=' + article.id" class="slide-img" />
+
+            <!-- 💡 关键：黑色渐变蒙层 -->
+            <div class="slide-overlay"></div>
+
+            <!-- 文字内容 -->
+            <div class="slide-info">
+              <div class="slide-tag">{{ formatCategory(article.category) }}</div>
+              <div class="slide-h1">{{ article.title }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="dots">
+          <div v-for="(art, index) in wikiList" :key="index" class="dot" :class="{ active: currentIndex === index }">
           </div>
         </div>
       </div>
+      <div class="safe-bottom"></div>
+    </div>
     </div>
   </PageShell>
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from "vue";
+import { ref, onMounted, watch, computed, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { apiGet } from "../api/http";
 import PageShell from "../components/PageShell.vue";
@@ -134,16 +155,45 @@ const members = ref([]);
 const activeMemberId = ref(null);
 const adviceList = ref([]); // 首页展示的精简列表
 const consultHistory = ref([]); // 存放真实的问诊历史
-
-// 百科静态占位数据
-const wikiCards = [
-  { title: "高血压防治" },
-  { title: "儿童饮食指南" },
-  { title: "糖尿病知识" }
-];
+const wikiList = ref([]);
 
 // 1. 任务进度计算
 const taskStats = ref({ total: 0, done: 0 });
+
+const carouselRef = ref(null);
+const currentIndex = ref(0);
+let timer = null;
+
+// 1. 监听滚动，更新小圆点状态
+function handleScroll(e) {
+  const scrollLeft = e.target.scrollLeft;
+  // 💡 这里的 0.88 必须和你 CSS 里的 flex: 0 0 88% 一致
+  const itemWidth = e.target.offsetWidth * 0.88; 
+  currentIndex.value = Math.round(scrollLeft / itemWidth);
+}
+
+// 2. 自动播放逻辑
+function startAutoPlay() {
+  stopAutoPlay(); // 先清除旧的
+  timer = setInterval(() => {
+    if (!carouselRef.value) return;
+
+    // 如果到最后一张了，回到第一张
+    if (currentIndex.value >= wikiList.value.length - 1) {
+      currentIndex.value = 0;
+    } else {
+      currentIndex.value++;
+    }
+
+    // 计算滚动的距离并赋值
+    const targetX = carouselRef.value.offsetWidth * 0.88 * currentIndex.value;
+    carouselRef.value.scrollTo({ left: targetX, behavior: 'smooth' });
+  }, 4000); // 4秒转一次
+}
+
+function stopAutoPlay() {
+  if (timer) clearInterval(timer);
+}
 
 async function loadTaskStats(mid) {
   try {
@@ -206,10 +256,25 @@ onMounted(async () => {
     if (activeMemberId.value) {
       loadPreviewData(activeMemberId.value);
     }
+    loadWikiRecommend();
+
+    startAutoPlay();
+
+    // 给容器手动加个监听，更新圆点
+    if (carouselRef.value) {
+      carouselRef.value.addEventListener('scroll', handleScroll);
+    }
 
   } catch (e) {
     console.error("首页数据加载失败", e);
     userName.value = "请先登录";
+  }
+});
+
+onBeforeUnmount(() => {
+  stopAutoPlay();
+  if (carouselRef.value) {
+    carouselRef.value.removeEventListener('scroll', handleScroll);
   }
 });
 
@@ -220,30 +285,8 @@ watch(activeMemberId, (newId) => {
     loadPreviewData(newId); // 重新加载下方的建议
     loadFilteredHistory(newId);
     loadTaskStats(newId); // 👈 联动任务统计
+    loadWikiRecommend();
   }
-});
-
-const aiGreeting = computed(() => {
-  const m = members.value.find(x => x.id === activeMemberId.value);
-  if (!m) return "正在同步家庭健康数据...";
-
-  // 1. 优先逻辑：检查资料完整度
-  if (!m.height || !m.weight) {
-    return `你好 ${m.name}，建议前往“我的”页面补全身高体重，以便我计算你的健康指标。`;
-  }
-
-  // 2. 次要逻辑：根据慢病标签（这里需要你之前改好的字典格式）
-  if (m.tags && Object.keys(m.tags).length > 0) {
-    const mainTag = Object.keys(m.tags)[0]; // 拿第一个病
-    return `今日关注：针对你的${mainTag}情况，我已更新了专科建议，记得查看。`;
-  }
-
-  // 3. 兜底逻辑：根据 BMI
-  const h = m.height / 100;
-  const bmi = (m.weight / (h * h)).toFixed(1);
-  if (bmi > 24) return `当前 BMI 为 ${bmi}（偏重），建议今日增加 30 分钟有氧运动。`;
-
-  return `你好 ${m.name}，今天感觉怎么样？我随时待命为您解答健康疑问。`;
 });
 
 // 4. 获取该成员的精简版建议 (只取最新两条)
@@ -281,6 +324,55 @@ function goHistoryConsult(session) {
     }
   });
 }
+
+const currentCategory = computed(() => {
+  const m = members.value.find(x => x.id === activeMemberId.value);
+  if (!m) return "common";
+
+  // 判定优先级：孕妇 > 儿童 > 老年 > 通用
+  if (m.special_status === 'pregnant') return "pregnant";
+  if (m.age > 0 && m.age <= 12) return "child";
+  if (m.age >= 60) return "elder";
+
+  return "common";
+});
+
+// 2. 获取推荐文章的函数
+async function loadWikiRecommend() {
+  // 👇👇👇 核心防御：如果成员列表还是空的，或者还没选中人，先不查推荐 👇👇👇
+  if (!activeMemberId.value || members.value.length === 0) {
+    console.log("⏳ 成员数据尚未就绪，稍后重试...");
+    return;
+  }
+
+  try {
+    const cat = currentCategory.value; // 拿到计算出来的分类
+    const res = await apiGet(`/wiki/recommend?category=${cat}`);
+    
+    if (res && res.length > 0) {
+      wikiList.value = res;
+    } else {
+      // 即使成功但没数据，也走保底
+      const allRes = await apiGet("/wiki");
+      wikiList.value = allRes.slice(0, 5);
+    }
+  } catch (e) {
+    // 只有真正的网络错误才会到这里
+    console.error("❌ 推荐接口调用失败，正在加载全量百科...");
+    const allRes = await apiGet("/wiki");
+    wikiList.value = allRes.slice(0, 5);
+  }
+}
+
+const formatCategory = (cat) => {
+  const map = {
+    child: "育儿",
+    pregnant: "母婴",
+    elder: "康养",
+    common: "生活"
+  };
+  return map[cat] || "健康";
+};
 
 </script>
 
@@ -340,9 +432,10 @@ function goHistoryConsult(session) {
 .dashboard {
   display: grid;
   /* 💡 关键：使用 1fr 1fr 1fr，强行让三列平均分配宽度，不被内容撑开 */
-  grid-template-columns: repeat(3, 1fr); 
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
-  padding: 0 16px; /* 加大两边的 Margin，让它和顶部的头像栏对齐 */
+  padding: 0 4px;
+  /* 加大两边的 Margin，让它和顶部的头像栏对齐 */
   margin-top: 15px;
   margin-bottom: -15px;
   margin-right: 24px;
@@ -354,88 +447,143 @@ function goHistoryConsult(session) {
   background: #fff;
   border: 1px solid #eef5f5;
   border-radius: 16px;
-  padding: 12px 8px; /* 减小左右 padding，防止内部内容挤爆 */
-  
+  padding: 12px 8px;
+  /* 减小左右 padding，防止内部内容挤爆 */
+
   display: flex;
   flex-direction: column;
-  align-items: center;      /* 💡 核心：所有内容水平居中 */
-  justify-content: center;   /* 💡 核心：所有内容垂直居中 */
-  
-  height: 145px;            /* 💡 核心：强行固定一个高度，确保排成一排 */
+  align-items: center;
+  /* 💡 核心：所有内容水平居中 */
+  justify-content: center;
+  /* 💡 核心：所有内容垂直居中 */
+
+  height: 145px;
+  /* 💡 核心：强行固定一个高度，确保排成一排 */
   box-sizing: border-box;
-  box-shadow: 0 2px 8px rgba(23,162,162,0.03);
+  box-shadow: 0 2px 8px rgba(23, 162, 162, 0.03);
 }
 
 .dash-label {
   font-size: 11px;
   color: #8a9999;
   font-weight: 900;
-  margin-bottom: auto; /* 把标签推到最顶 */
+  margin-bottom: auto;
+  /* 把标签推到最顶 */
 }
 
 .dash-status {
-  margin-top: auto;   /* 把状态文字推到最底 */
+  margin-top: auto;
+  /* 把状态文字推到最底 */
   font-size: 11px;
   font-weight: 800;
 }
 
 /* BMI 样式 */
-.bmi-value { font-size: 18px; font-weight: 900; margin: 4px 0; }
+.bmi-value {
+  font-size: 18px;
+  font-weight: 900;
+  margin: 4px 0;
+}
+
 .bmi-bar-bg {
-  width: 90%;               /* 不要占满 100%，留点呼吸感 */
+  width: 90%;
+  /* 不要占满 100%，留点呼吸感 */
   height: 4px;
   background: linear-gradient(to right, #3498db, #10b981, #f1c40f, #e74c3c);
   border-radius: 2px;
   position: relative;
   margin: 10px 0 6px;
 }
+
 .bmi-pointer {
-  width: 6px; height: 6px; border-radius: 50%;
-  position: absolute; top: -1px; transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  position: absolute;
+  top: -1px;
+  transform: translateX(-50%);
   border: 1px solid #fff;
 }
 
 /* 风险标签样式 */
 .risk-tags {
   display: flex;
-  flex-direction: column;   /* 👈 关键：改为垂直排列，让字有足够的水平空间 */
-  align-items: center;      /* 居中 */
-  gap: 6px;                 /* 标签间距大一点 */
+  flex-direction: column;
+  /* 👈 关键：改为垂直排列，让字有足够的水平空间 */
+  align-items: center;
+  /* 居中 */
+  gap: 6px;
+  /* 标签间距大一点 */
   width: 100%;
   margin: 6px 0;
 }
 
 /* 2. 重点优化单个标签：更有分量 */
 .risk-dot {
-  width: 85%;               /* 宽度占格子的 85%，看起来更有条状感 */
-  font-size: 11px;          /* 字号稍微调大 1-2px */
-  padding: 4px 0;           /* 增加上下内边距 */
-  border-radius: 6px;       /* 稍微硬朗一点的圆角 */
+  width: 85%;
+  /* 宽度占格子的 85%，看起来更有条状感 */
+  font-size: 11px;
+  /* 字号稍微调大 1-2px */
+  padding: 4px 0;
+  /* 增加上下内边距 */
+  border-radius: 6px;
+  /* 稍微硬朗一点的圆角 */
   color: #fff;
-  font-weight: 800;         /* 字体加粗，增强可读性 */
+  font-weight: 800;
+  /* 字体加粗，增强可读性 */
   text-align: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* 淡淡的投影让字“浮”起来 */
-  
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  /* 淡淡的投影让字“浮”起来 */
+
   /* 💡 增加一个点缀 */
   display: flex;
   justify-content: center;
   align-items: center;
 }
-.lv-3 { background: #e74c3c; } /* 高危红 */
-.lv-2 { background: #f39c12; } /* 橙色 */
-.lv-1 { background: #3498db; } /* 蓝色 */
-.none-text { font-size: 10px; color: #ccc; margin-top: 10px; }
+
+.lv-3 {
+  background: #e74c3c;
+}
+
+/* 高危红 */
+.lv-2 {
+  background: #f39c12;
+}
+
+/* 橙色 */
+.lv-1 {
+  background: #3498db;
+}
+
+/* 蓝色 */
+.none-text {
+  font-size: 10px;
+  color: #ccc;
+  margin-top: 10px;
+}
 
 /* 任务圆环样式 */
 .task-circle {
-  width: 34px; height: 34px;
+  width: 34px;
+  height: 34px;
   border: 3px solid #17a2a2;
   border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 4px 0;
 }
-.task-num { font-size: 11px; font-weight: bold; color: #17a2a2; }
-.dash-status { font-size: 10px; color: #333; }
+
+.task-num {
+  font-size: 11px;
+  font-weight: bold;
+  color: #17a2a2;
+}
+
+.dash-status {
+  font-size: 10px;
+  color: #333;
+}
 
 /* 2. 内层轨道：负责让成员排成一排 */
 .avatars {
@@ -497,7 +645,11 @@ function goHistoryConsult(session) {
 
 /* 内容区 */
 .content {
-  padding: 10px 12px 0;
+  margin-top: -40px;
+  padding-top: 10px; 
+  
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* 两张卡片一行 */
@@ -642,53 +794,153 @@ function goHistoryConsult(session) {
 }
 
 /* 健康百科 */
-.wiki {
-  margin-top: 10px;
-  background: #ffffff;
-  border: 1px solid #dfeeee;
-  border-radius: 10px;
-  padding: 10px;
+.wiki-section {
+  margin: 15px 12px;
+  background: #fff;
+  border-radius: 24px;
+  padding: 16px 0;
+  /* 左右不给padding，让轮播图能贴边滑 */
+  box-shadow: 0 10px 30px rgba(23, 162, 162, 0.05);
 }
 
-.wiki-head {
+.wiki-nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 0 16px 12px;
+  cursor: pointer;
 }
 
 .wiki-title {
-  font-size: 14px;
-  font-weight: 800;
-  color: #1f2b2b;
+  font-size: 16px;
+  font-weight: 900;
+  color: #123;
 }
 
-.arrow {
-  border: none;
-  background: transparent;
-  font-size: 18px;
-  cursor: pointer;
-}
-
-.wiki-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.wiki-card {
-  height: 78px;
-  border: 1px solid #e7efef;
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 8px;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-
-.wiki-card-title {
+.wiki-arrow {
   font-size: 12px;
-  font-weight: 700;
-  color: #1f2b2b;
+  color: #17a2a2;
+  font-weight: bold;
+}
+
+/* 轮播容器 */
+.wiki-carousel {
+  display: flex;
+  overflow-x: auto;
+  /* 💡 核心：强制水平吸附 */
+  scroll-snap-type: x mandatory;
+  /* 💡 核心：让滚动变平滑，JS切换时才有动画 */
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  padding: 0 20px;
+  gap: 12px;
+}
+
+.wiki-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+/* 2. 幻灯片卡片 */
+.wiki-slide {
+  flex: 0 0 88%;
+  /* 宽度占 88% */
+  height: 160px;
+  /* 稍微拉高一点，更有气势 */
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+  /* 💡 核心：停止时停留在卡片中心 */
+  scroll-snap-align: center;
+}
+
+/* 3. 新增：底部圆点指示器样式 */
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 15px; /* 加大间距 */
+  height: 10px;    /* 给个固定高度 */
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #cbdadb; /* 默认灰色调深一点 */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dot.active {
+  width: 18px;        /* 选中时变长 */
+  background: #17a2a2; /* 选中时变主色调 */
+  border-radius: 10px;
+}
+
+.slide-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 💡 蒙层：从底部往上渐黑 */
+.slide-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 70%;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
+}
+
+.slide-info {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  right: 16px;
+  color: #fff;
+}
+
+.slide-tag {
+  font-size: 10px;
+  background: rgba(23, 162, 162, 0.8);
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.slide-h1 {
+  font-size: 15px;
+  font-weight: 800;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.me-page, .home-container, .page-root { 
+  /* 💡 这里的类名请对应你 template 最外层的那个 div */
+  height: 100vh;           /* 占满屏幕高度 */
+  overflow-y: auto;        /* 👈 关键：开启纵向滚动 */
+  overflow-x: hidden;      /* 禁止横向溢出 */
+  display: flex;
+  flex-direction: column;
+  background-color: #f8fcfc;
+  scroll-behavior: smooth; /* 让点击跳转时的滚动变丝滑 */
+}
+
+/* 2. 隐藏滚动条（让它看起来像原生 App） */
+.home-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* 3. 增强底部安全区：极其重要！ */
+/* 确保滚动到最下面时，内容不会被底部的 TabBar 挡住 */
+.safe-bottom {
+  height: 20px;           /* 留出约 100px 的空白 */
+  flex-shrink: 0;          /* 防止被 flex 压缩 */
+}
+
+/* 4. 给每一个大模块增加一点间距，增加“饱满感” */
+.top-bg, .dashboard, .content, .wiki {
+  flex-shrink: 0;          /* 👈 关键：保证在滚动容器内不会被挤扁 */
+  margin-bottom: 12px;
 }
 </style>

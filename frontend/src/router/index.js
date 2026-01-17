@@ -7,6 +7,7 @@ import Wiki from "../views/Wiki.vue";
 import Me from "../views/Me.vue";
 import AdviceDetail from "../views/AdviceDetail.vue";
 import TaskDetail from "../views/TaskDetail.vue";
+import WikiDetail from "../views/WikiDetail.vue";
 
 const routes = [
   { path: "/", redirect: "/home" },
@@ -21,6 +22,8 @@ const routes = [
   { path: "/wiki", component: Wiki, meta: { tab: "wiki" } },
   
   { path: "/me", component: Me, meta: { tab: "me" } },
+
+  { path: "/wiki/:id", component: WikiDetail, meta: { tab: "wiki" } },
 ];
 
 const router = createRouter({

@@ -98,3 +98,22 @@ class ChatMessage(SQLModel, table=True):
     
     # 记录时间
     created_at: datetime = Field(default_factory=datetime.utcnow)       
+
+class WikiArticle(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    
+    source: str = ""
+    
+    # 标题与分类
+    title: str = Field(index=True)
+    category: str # 存入: child, pregnant, elder, common
+    
+    # 内容展示
+    summary: str # 首页轮播图显示的简短摘要
+    content: str # 详细长文正文 (支持分段文本)
+    cover_url: str = "" # 存放封面图链接 (如: /static/wiki_1.jpg)
+    
+    # 搜索与关联
+    tags_json: str = Field(default="[]") # 关键词标签
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)    
