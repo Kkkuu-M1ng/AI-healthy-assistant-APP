@@ -41,6 +41,7 @@
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { apiGet } from '../api/http';
+import { BACKEND_URL } from '../api/http';
 import PageShell from '../components/PageShell.vue';
 
 const route = useRoute();
@@ -66,10 +67,10 @@ const formatDate = (isoStr) => {
 
 const getHeroImage = (cat) => {
     const map = {
-        child: "http://127.0.0.1:8000/static/child.png", // 温暖的母婴图
-        pregnant: "http://127.0.0.1:8000/static/pregnant.png", // 孕期图
-        elder: "http://127.0.0.1:8000/static/elder.webp", // 康养图
-        common: "http://127.0.0.1:8000/static/common.jpg"  // 瑜伽/生活图
+        child: `${BACKEND_URL}/static/child.png`, // 温暖的母婴图
+        pregnant: `${BACKEND_URL}/static/pregnant.png`, // 孕期图
+        elder: `${BACKEND_URL}/static/elder.webp`, // 康养图
+        common: `${BACKEND_URL}/static/common.jpg`  // 瑜伽/生活图
     };
     return map[cat] || "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=600";
 };

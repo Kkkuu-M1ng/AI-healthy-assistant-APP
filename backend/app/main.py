@@ -32,11 +32,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # 允许前端本地开发访问（Vue 默认 5173）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    # allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://2e6c8f2.r21.vip.cpolar.cn"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.on_event("startup")
 def on_startup():

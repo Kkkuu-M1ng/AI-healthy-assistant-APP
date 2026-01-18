@@ -117,7 +117,7 @@
           <div v-for="article in wikiList" :key="article.id" class="wiki-slide"
             @click="router.push(`/wiki/${article.id}`)">
             <!-- 背景图 (如果没有存图，我们就用占位色块或网图) -->
-            <img :src="'http://127.0.0.1:8000' + article.cover_url" class="slide-img" />
+            <img :src="BACKEND_URL + article.cover_url" class="slide-img" />
 
             <!-- 💡 关键：黑色渐变蒙层 -->
             <div class="slide-overlay"></div>
@@ -142,10 +142,12 @@
 
 <script setup>
 import { ref, onMounted, watch, computed, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { apiGet } from "../api/http";
+import { BACKEND_URL } from "../api/http";
 import PageShell from "../components/PageShell.vue";
 
+const route = useRoute();
 const router = useRouter();
 const LS_MEMBER_KEY = "active_member_id";
 
@@ -230,6 +232,17 @@ const bmiInfo = computed(() => {
 
 // 2. 初始化：获取用户信息和成员列表
 onMounted(async () => {
+
+  const urlToken = route.query.token;
+  if (urlToken) {
+    // 💡 2. 捡起 Token，存入“保险柜”
+    localStorage.setItem("ai_token", urlToken);
+    console.log("✅ 微信登录成功，Token 已存档");
+    
+    // 💡 3. 清理一下 URL 地址栏，把丑陋的 token 删掉，保持美观
+    router.replace('/home'); 
+  }
+
   try {
     // A. 获取我的昵称 (从 me 接口拿)
     const user = await apiGet("/me");
