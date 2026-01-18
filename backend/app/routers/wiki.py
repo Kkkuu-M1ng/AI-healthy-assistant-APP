@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List, Optional
 from fastapi import Request
+from sqlalchemy import func
 import json
 
 from ..db import get_session
@@ -20,7 +21,7 @@ def recommend_wiki(
     print(f"📡【强力捕获】收到推荐请求，分类是: {category}")
 
     # 逻辑保持不变
-    statement = select(WikiArticle).where(WikiArticle.category == category).limit(3)
+    statement = select(WikiArticle).where(WikiArticle.category == category).order_by(func.random()).limit(3)
     results = session.exec(statement).all()
     
     if len(results) < 3 and category != "common":

@@ -117,7 +117,7 @@
           <div v-for="article in wikiList" :key="article.id" class="wiki-slide"
             @click="router.push(`/wiki/${article.id}`)">
             <!-- 背景图 (如果没有存图，我们就用占位色块或网图) -->
-            <img :src="article.cover_url || 'https://picsum.photos/400/200?random=' + article.id" class="slide-img" />
+            <img :src="'http://127.0.0.1:8000' + article.cover_url" class="slide-img" />
 
             <!-- 💡 关键：黑色渐变蒙层 -->
             <div class="slide-overlay"></div>
@@ -379,9 +379,10 @@ const formatCategory = (cat) => {
 <style scoped>
 /* 顶部背景 */
 .top-bg {
-  background: linear-gradient(180deg, #d7f3f4 0%, #f7fbfb 70%);
-  width: 100%;
-  padding: 10px 16px 12px;
+  background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
+  width: 100%; /* 👈 必须是 100% */
+  box-sizing: border-box;
+
 }
 
 /* 状态栏 */
@@ -396,6 +397,7 @@ const formatCategory = (cat) => {
 
 /* 问候语 */
 .greet {
+  margin-left: 16px !important;
   margin: 6px 0 10px;
   text-align: left;
 }
@@ -430,16 +432,17 @@ const formatCategory = (cat) => {
 }
 
 .dashboard {
+  width: auto;
+  margin: 15px 20px;
+  box-sizing: border-box;
+  /* 💡 关键：左右给 16px padding */
+  
   display: grid;
-  /* 💡 关键：使用 1fr 1fr 1fr，强行让三列平均分配宽度，不被内容撑开 */
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
-  padding: 0 4px;
-  /* 加大两边的 Margin，让它和顶部的头像栏对齐 */
   margin-top: 15px;
-  margin-bottom: -15px;
-  margin-right: 24px;
-  margin-left: -4px;
+  /* ❌ 删掉原本的 margin-bottom: -15px，改用正数 */
+  margin-bottom: 20px; 
 }
 
 /* 2. 修正小卡片：统一高度和重心 */
@@ -447,16 +450,13 @@ const formatCategory = (cat) => {
   background: #fff;
   border: 1px solid #eef5f5;
   border-radius: 16px;
-  padding: 12px 8px;
-  /* 减小左右 padding，防止内部内容挤爆 */
-
   display: flex;
   flex-direction: column;
   align-items: center;
   /* 💡 核心：所有内容水平居中 */
   justify-content: center;
   /* 💡 核心：所有内容垂直居中 */
-
+  width: 100%;
   height: 145px;
   /* 💡 核心：强行固定一个高度，确保排成一排 */
   box-sizing: border-box;
@@ -468,6 +468,7 @@ const formatCategory = (cat) => {
   color: #8a9999;
   font-weight: 900;
   margin-bottom: auto;
+  margin-top: 10px;
   /* 把标签推到最顶 */
 }
 
@@ -476,6 +477,7 @@ const formatCategory = (cat) => {
   /* 把状态文字推到最底 */
   font-size: 11px;
   font-weight: 800;
+  margin-bottom: 10px;
 }
 
 /* BMI 样式 */
@@ -645,11 +647,11 @@ const formatCategory = (cat) => {
 
 /* 内容区 */
 .content {
-  margin-top: -40px;
-  padding-top: 10px; 
-  
-  padding-left: 12px;
-  padding-right: 12px;
+  width: auto;
+  margin: 15px 20px;
+  box-sizing: border-box;
+  /* 💡 这里不要用负 margin，直接 16px padding */
+  margin-top: 0; /* 清除负边距 */
 }
 
 /* 两张卡片一行 */
@@ -795,10 +797,13 @@ const formatCategory = (cat) => {
 
 /* 健康百科 */
 .wiki-section {
-  margin: 15px 12px;
+  width: auto;
+  box-sizing: border-box;
+  /* 💡 给这个大容器也加上 16px 左右间距 */
+  margin-top: 16px;
+
   background: #fff;
   border-radius: 24px;
-  padding: 16px 0;
   /* 左右不给padding，让轮播图能贴边滑 */
   box-shadow: 0 10px 30px rgba(23, 162, 162, 0.05);
 }
@@ -832,7 +837,8 @@ const formatCategory = (cat) => {
   /* 💡 核心：让滚动变平滑，JS切换时才有动画 */
   scroll-behavior: smooth;
   scrollbar-width: none;
-  padding: 0 20px;
+  padding: 0;
+  width: 100%;
   gap: 12px;
 }
 
@@ -915,15 +921,32 @@ const formatCategory = (cat) => {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-.me-page, .home-container, .page-root { 
+.me-page, .page-root { 
   /* 💡 这里的类名请对应你 template 最外层的那个 div */
   height: 100vh;           /* 占满屏幕高度 */
   overflow-y: auto;        /* 👈 关键：开启纵向滚动 */
   overflow-x: hidden;      /* 禁止横向溢出 */
   display: flex;
   flex-direction: column;
-  background-color: #f8fcfc;
+  background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
   scroll-behavior: smooth; /* 让点击跳转时的滚动变丝滑 */
+}
+
+.home-container {
+  /* 💡 核心修复：锁死宽度为 100%，且内边距算在宽度内 */
+  width: 100%;
+  max-width: 450px;        /* 保持手机预览感 */
+  box-sizing: border-box;  /* 👈 必须加这一行，让 padding 不撑大盒子 */
+  margin: 0 auto;         /* 在电脑端居中 */
+  
+  height: 100vh;
+  overflow-y: auto;        /* 开启滚动 */
+  overflow-x: hidden;      /* 👈 物理屏蔽：绝对不准产生左右晃动 */
+  
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
+  padding: 0;              /* 👈 这里设为 0，留白交给里面的组件自己控制 */
 }
 
 /* 2. 隐藏滚动条（让它看起来像原生 App） */
@@ -934,7 +957,7 @@ const formatCategory = (cat) => {
 /* 3. 增强底部安全区：极其重要！ */
 /* 确保滚动到最下面时，内容不会被底部的 TabBar 挡住 */
 .safe-bottom {
-  height: 20px;           /* 留出约 100px 的空白 */
+  height: 70px;           /* 留出约 100px 的空白 */
   flex-shrink: 0;          /* 防止被 flex 压缩 */
 }
 

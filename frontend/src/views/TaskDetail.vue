@@ -117,8 +117,12 @@ onMounted(() => {
 
 <style scoped>
 .page{
-  padding: 12px 12px 0;
   box-sizing: border-box;
+  width: 100%;
+  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+  
+  margin: 0 auto;        /* 👈 居中 */
+  padding: 16px;    
 }
 
 .nav{

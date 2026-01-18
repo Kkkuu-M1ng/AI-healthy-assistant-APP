@@ -11,7 +11,7 @@ import json
 # 导入你的数据库依赖
 from app.db import get_session
 # 导入你的模型 (确保 models.py 里已经加了 ConsultSession 和 ChatMessage)
-from app.models import ConsultSession, ChatMessage, AdviceItem, TaskItem, FamilyMember
+from app.models import ConsultSession, ChatMessage, AdviceItem, TaskItem, FamilyMember, WikiArticle
 from app.core.auth import get_current_user_id
 from app.services.llm import chat_with_ai_vision, summarize_session_title, generate_health_plan
 
@@ -21,6 +21,7 @@ def dump_json(obj):
     return json.dumps(obj, ensure_ascii=False)
 
 class ChatRequest(BaseModel):
+    content: str | None = None
     image_base64: str | None = None
 
 # --------------------------
@@ -97,18 +98,17 @@ def list_sessions(
 @router.post("/{session_id}/chat")
 def chat(
     session_id: int, 
-    content: str, 
-    data: ChatRequest, 
+    data: ChatRequest,
     db: Session = Depends(get_session), 
     uid: int = Depends(get_current_user_id)
 ):
-    # A. 基础校验
+    # --- A. 基础校验 ---
+    content = data.content or "" 
     session_obj = db.get(ConsultSession, session_id)
     if not session_obj or session_obj.user_id != uid:
         raise HTTPException(status_code=404, detail="会话不存在")
 
     member = db.get(FamilyMember, session_obj.member_id)
-    # 构造给 AI 看的画像字典
     persona_data = {
         "name": member.name, "age": member.age, "gender": member.gender,
         "height": member.height, "weight": member.weight,
@@ -116,66 +116,64 @@ def chat(
         "allergies": member.allergies, "meds": member.meds, "notes": member.notes
     }
 
-    # B. 存用户消息
+    # --- B. 存入当前用户消息 ---
     user_msg = ChatMessage(session_id=session_id, role="user", content=content)
     db.add(user_msg)
     db.commit()
 
-    # C. 打包历史记录
-    history_rows = db.exec(select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)).all()
+    # --- C. 构造历史上下文 ---
+    history_rows = db.exec(
+        select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)
+    ).all()
     payload = [{"role": m.role, "content": m.content} for m in history_rows]
 
-    # D. 🚀 调用通义千问 (识图 + 提取标签版本)
+    # --- D. 调用通义千问 (识图 + 提取标签) ---
     ai_result = chat_with_ai_vision(payload, persona_data, data.image_base64)
     ai_reply_text = ai_result.get("reply", "我正在思考...")
 
-    # E. 【画像进化】如果 AI 发现了新症状，自动打标签
+    # --- E. 【画像进化】识图提取新标签并存入 ---
     new_tags_found = ai_result.get("new_tags", [])
     if new_tags_found:
         current_tags = load_tags(member.tags_json)
         for t_name in new_tags_found:
             if t_name not in current_tags:
-                current_tags[t_name] = {"level": 2, "score": 100} # 默认确诊级别
+                current_tags[t_name] = {"level": 2, "score": 100}
         member.tags_json = dump_tags(current_tags)
         db.add(member)
 
-    # F. 存入 AI 回复气泡
+    # --- F. 【重点修复】先创建 AI 回复对象 ---
+    # 💡 必须先创建 ai_msg 变量，下面才能修改它的 content
     ai_msg = ChatMessage(session_id=session_id, role="assistant", content=ai_reply_text)
+
+    # --- G. 【智能关联百科】 ---
+    try:
+        # 只在回复比较长时才去查，提高效率
+        if len(ai_reply_text) > 5:
+            all_wikis = db.exec(select(WikiArticle)).all()
+            for wiki in all_wikis:
+                wiki_tags = json.loads(wiki.tags_json) if wiki.tags_json else []
+                # 如果 AI 回复里提到了百科的标签
+                if any(tag in ai_reply_text for tag in wiki_tags):
+                    # 💡 此时 ai_msg 已经存在，可以安全地追加暗号了
+                    ai_msg.content += f"\n\n[[WIKI_LINK:{wiki.id}:{wiki.title}]]"
+                    print(f"📖 成功关联百科: {wiki.title}")
+                    break
+    except Exception as e:
+        print(f"⚠️ 关联百科小失败: {e}")
+
+    # --- H. 存入 AI 回复并提交 ---
     db.add(ai_msg)
+    
+    # --- I. 自动占位首页标题 ---
+    # 规则：如果是首轮对话，且标题还是默认的，立刻起名
+    if session_obj.title == "新问诊会话":
+        clean_user_msg = content.split("用户描述：")[-1] if "用户描述：" in content else content
+        placeholder_title = clean_user_msg[:12].strip() + ("..." if len(clean_user_msg) > 12 else "")
+        session_obj.title = placeholder_title
+        db.add(session_obj)
+        print(f"📌 已为会话快速重命名: {placeholder_title}")
 
-    # G. 🚀 【核心亮点】调用你写的标题总结函数
-    # 逻辑：如果是第一轮有效的对话，且标题还是默认的
-    if len(history_rows) <= 4:
-        # 💡 只有当标题是初始值，或者还是空的，才起名
-        if session_obj.title in ["新问诊会话", "新会话", "", None]:
-            try:
-                # 1. 清理指令，只留用户原话
-                clean_content = content.split("用户描述：")[-1] if "用户描述：" in content else content
-                
-                # 2. 拼接上下文，让 AI 总结更准
-                # 用户问 + AI 刚回复的话
-                context_for_naming = f"用户问：{clean_content}\nAI答：{ai_reply_text[:40]}"
-                
-                print(f"🕵️‍♂️ 正在为会话 ID {session_id} 申请 AI 起名...")
-                
-                # 3. 调 LLM 函数
-                new_title = summarize_session_title(context_for_naming)
-                
-                # 4. 强制写入并打印（方便你观察）
-                if new_title and len(new_title) > 0:
-                    session_obj.title = new_title
-                    print(f"✨【成功】标题已进化为: {new_title}")
-                
-                # 必须 add 确保 SQLModel 追踪到这个修改
-                db.add(session_obj) 
-                
-            except Exception as e:
-                print(f"⚠️ 标题总结小失败(跳过): {e}")
-                # 失败了也不要让程序死掉，给个默认标题
-                if not session_obj.title:
-                    session_obj.title = clean_content[:10]
-
-    # H. 最终统一提交
+    # 最后统一提交所有更改（消息、画像、标题）
     db.commit()
     db.refresh(ai_msg)
     
@@ -199,80 +197,77 @@ def generate_plan(
     ).all()
     history_payload = [{"role": m.role, "content": m.content} for m in history_rows]
 
-    # 3. 🚀 【关键修复】：将 notes 字段喂给 AI，并处理标签格式
-    # 之前 AI 0 建议是因为你没把家人备注传过去，AI 觉得没信息可总结
+    # 🚀 【核心逻辑 1】：延迟起名 (只有点击魔法棒时，才为会话定名)
+    # 逻辑：如果当前还是默认标题，我们就总结一个
+    
+    try:
+        print(f"🕵️‍♂️ 正在为会话 ID {session_id} 申请 AI 深度总结标题...")
+        # 💡 技巧：把整场对话的前 5 句拼起来给 AI 看，起名最准
+        chat_context = ""
+        for m in history_rows[:6]:
+            # 过滤掉指令干扰，只取内容
+            text = m.content.split("用户描述：")[-1] if "用户描述：" in m.content else m.content
+            chat_context += f"{m.role}: {text[:30]}\n"
+            
+            # 调用你写的总结函数
+        new_title = summarize_session_title(chat_context)
+        if new_title:
+            session_obj.title = new_title
+            db.add(session_obj)
+            print(f"✨【成功】会话已更名为: {new_title}")
+    except Exception as e:
+            print(f"⚠️ 总结标题小失败: {e}")
+
+    # 3. 准备画像数据投喂 AI
     persona_brief = {
-        "name": member.name,
-        "age": member.age, 
-        "gender": member.gender, 
-        "tags": load_tags(member.tags_json), # 使用我们写好的 load_tags 转成字典
-        "allergies": member.allergies, 
-        "meds": member.meds,
-        "notes": member.notes # 👈 必须带上这个“全能备注”！
+        "name": member.name, "age": member.age, "gender": member.gender, 
+        "tags": load_tags(member.tags_json), "notes": member.notes,
+        "allergies": member.allergies, "meds": member.meds
     }
 
-    # 🔍 调试打印 1：看看发给 AI 的档案对不对
-    print(f"📡 发送给 AI 的画像数据: {persona_brief}")
-
-    # 4. 调用 AI 总结
+    # 4. 🚀 【核心逻辑 2】：调用 AI 生成建议和任务
+    print(f"🤖 正在为 {member.name} 生成详细健康方案...")
     ai_plan = generate_health_plan(history_payload, persona_brief)
 
-    # 🔍 调试打印 2：看看 AI 到底回了什么
-    print(f"🤖 AI 返回的原始 JSON: {ai_plan}")
-
-    # 5. 提取数据
+    # 5. 提取并清洗 AI 返回的 JSON 数据
     new_advices = ai_plan.get("new_advice", [])
     new_tasks = ai_plan.get("new_tasks", [])
+    # 强制变数组，防止 AI 调皮返回字典
+    if isinstance(new_advices, dict): new_advices = []
+    if isinstance(new_tasks, dict): new_tasks = []
 
+    # A. 遍历保存建议
     for item in new_advices:
         if not isinstance(item, dict): continue
-        
-        # 💡 尝试从多种可能的键名中抓取标题和理由
-        title = item.get("title") or item.get("name") or "健康建议"
-        reason = item.get("reason") or item.get("content") or item.get("principle") or "根据问诊生成"
+        title = item.get("title") or item.get("name") or "建议"
+        reason = item.get("reason") or item.get("content") or "问诊总结"
         tags = item.get("tags") or []
         
         advice = AdviceItem(
-            user_id=uid,
-            member_id=member.id,
-            title=str(title),
-            reason=str(reason),
+            user_id=uid, member_id=member.id, title=str(title), reason=str(reason),
             tags_json=json.dumps(tags, ensure_ascii=False),
-            expire_at=datetime.utcnow() + timedelta(days=30),
-            is_active=True
+            expire_at=datetime.utcnow() + timedelta(days=30), is_active=True
         )
         db.add(advice)
 
-    # --- B. 任务入库 (全兼容模式) ---
+    # B. 遍历保存任务
     for item in new_tasks:
         if not isinstance(item, dict): continue
-        
-        # 💡 关键：同时兼容 "title" 和 AI 刚才吐出的 "task"
         t_title = item.get("title") or item.get("task") or "健康任务"
-        t_freq = item.get("freq") or item.get("time") or "由医生建议"
-        t_due = item.get("due") or item.get("note") or "尽快开始"
-        
         task = TaskItem(
-            user_id=uid, 
-            member_id=member.id, 
-            title=str(t_title), # 👈 确保这里绝对不是 None
-            freq=str(t_freq),
-            due=str(t_due),
-            done=False,
-            detail_json="[]",
-            logs_json="[]"
+            user_id=uid, member_id=member.id, title=str(t_title),
+            freq=item.get("freq") or "按时执行", due=item.get("due") or "尽快",
+            done=False, detail_json="[]", logs_json="[]"
         )
         db.add(task)
 
-    # 6. 提交
+    # 6. 一次性提交：标题更新 + 建议入库 + 任务入库
     db.commit()
-
-    # 🔍 调试打印 3：确认最终入库数量
-    print(f"✅ 成功入库：{len(new_advices)} 条建议, {len(new_tasks)} 条任务")
+    print(f"✅ 闭环完成：{len(new_advices)}条建议, {len(new_tasks)}条任务已存入 {member.name} 的名下")
 
     return {
         "ok": True, 
-        "reply": ai_plan.get("reply", "方案生成完毕。"), 
+        "reply": ai_plan.get("reply", "方案已制定。"), 
         "count_advice": len(new_advices),
         "count_tasks": len(new_tasks)
     }

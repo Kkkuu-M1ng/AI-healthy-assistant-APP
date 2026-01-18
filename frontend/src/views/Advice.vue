@@ -232,13 +232,19 @@ async function handleCompleteTask(task) {
 <style scoped>
 /* 1. 基础页面布局 */
 .page {
-  padding: 14px;
-  box-sizing: border-box;
   height: 100vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  background-color: #f8fcfc; /* 浅底色增加层次感 */
+  background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
+
+  width: 100%;
+  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+  
+  margin: 0 auto;        /* 👈 居中 */
+  padding: 16px;         /* 👈 统一左右间距 */
+  
+  box-sizing: border-box; /* 确保 padding 不撑爆宽度 */
 }
 
 /* 隐藏滚动条 */
@@ -251,8 +257,9 @@ async function handleCompleteTask(task) {
   background: linear-gradient(180deg, #d7f3f4 0%, #f7fbfb 100%);
   border: 1px solid #e7efef;
   border-radius: 16px;
-  padding: 16px;
   box-shadow: 0 4px 12px rgba(23,162,162,0.05);
+  width: 100%;             /* 👈 必须是 100% */
+  box-sizing: border-box;  /* 👈 必须加这一行 */
 }
 
 .title { font-size: 16px; font-weight: 900; color: #123; }

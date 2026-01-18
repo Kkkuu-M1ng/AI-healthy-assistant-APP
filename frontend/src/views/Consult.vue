@@ -37,7 +37,7 @@
         </button>
       </div>
 
-      <!-- 消息区 -->
+      
       <div ref="msgBox" class="msgs">
         <div v-for="msg in (currentSession?.messages || [])" :key="msg.id" class="row" :class="msg.role">
           <div class="bubble">
@@ -45,11 +45,27 @@
               <span class="who">{{ msg.role === 'user' ? '我' : 'AI' }}</span>
               <span class="time">{{ msg.time }}</span>
             </div>
+            
+            <!-- 1. 文本消息 (AI 和用户都走这个) -->
+            <div v-if="msg.type === 'text'" class="text-group">
+              <!-- 💡 核心改动：使用 parseMessage 函数处理文本 -->
+              <div class="text">{{ parseMessage(msg.text).text }}</div>
 
-            <!-- 文本消息 -->
-            <div v-if="msg.type === 'text'" class="text" v-text="msg.text"></div>
+              <!-- 💡 核心改动：如果是 AI 发的且带百科链接，显示卡片 -->
+              <div v-if="msg.role === 'ai' && parseMessage(msg.text).wikiId" class="wiki-link-card"
+                @click="router.push(`/wiki/${parseMessage(msg.text).wikiId}`)">
+                <div class="wiki-link-inner">
+                  <span class="wiki-icon">📖</span>
+                  <div class="wiki-info">
+                    <div class="wiki-label">参考相关百科</div>
+                    <div class="wiki-title-mini">{{ parseMessage(msg.text).wikiTitle }}</div>
+                  </div>
+                  <span class="wiki-arrow">›</span>
+                </div>
+              </div>
+            </div>
 
-            <!-- 图片消息 -->
+            <!-- 2. 图片消息 (保持原样) -->
             <div v-else-if="msg.type === 'image'" class="img-wrap">
               <img :src="msg.imageDataUrl" alt="upload" />
               <div v-if="msg.text" class="img-caption" v-text="msg.text"></div>
@@ -57,6 +73,7 @@
           </div>
         </div>
 
+        <!-- Loading 占位保持原样 -->
         <div v-if="loading" class="row ai">
           <div class="bubble">
             <div class="meta"><span class="who">AI</span><span class="time">...</span></div>
@@ -71,8 +88,7 @@
           ＋
         </button>
 
-        <textarea v-model="input" class="input" rows="2" 
-          @keydown.enter.exact.prevent="sendText" />
+        <textarea v-model="input" class="input" rows="2" @keydown.enter.exact.prevent="sendText" />
 
         <button class="send" :disabled="!canSend" @click="sendText">
           {{ loading ? "…" : "发送" }}
@@ -220,6 +236,27 @@ async function handleGeneratePlan() {
   }
 }
 
+const parseMessage = (content) => {
+  // 💡 核心保护：如果 content 是 undefined、null 或者是空，直接返回默认值
+  if (!content || typeof content !== 'string') {
+    return { text: content || "", wikiId: null, wikiTitle: null };
+  }
+
+  const wikiRegex = /\[\[WIKI_LINK:(\d+):(.+?)\]\]/;
+  const match = content.match(wikiRegex);
+
+  if (match) {
+    return {
+      text: content.replace(wikiRegex, "").trim(), // 去掉暗号的正文
+      wikiId: match[1],
+      wikiTitle: match[2]
+    };
+  }
+  
+  // 没匹配到暗号，原样返回
+  return { text: content, wikiId: null, wikiTitle: null };
+};
+
 // ====== 唯一合法的初始化挂载 ======
 onMounted(async () => {
   console.log("🚀 正在初始化问诊室...");
@@ -231,7 +268,7 @@ onMounted(async () => {
     const localData = loadSessions();
 
     const syncedSessions = localData.filter(localSess => {
-      if (!localSess.serverId) return true; 
+      if (!localSess.serverId) return true;
       return serverIds.includes(localSess.serverId);
     });
     sessions.value = syncedSessions;
@@ -262,7 +299,7 @@ onMounted(async () => {
         updatedAt: nowDateTime(),
         preview: "（新问诊）"
       };
-      
+
       // 把新白纸插到最前面，并设为当前活跃
       sessions.value.unshift(shell);
       currentSessionId.value = shell.id;
@@ -325,11 +362,11 @@ function startTemporarySession() {
   // 💡 注意：我们不需要把它 unshift 进 sessions 列表，
   // 只有当用户说话领号后，再塞进列表存 localStorage
   currentSessionId.value = tempSess.id;
-  
+
   // 我们建立一个临时的活跃对象
   // 假设你的 sessions 是一个 ref 数组
-  sessions.value = [tempSess, ...sessions.value]; 
-  
+  sessions.value = [tempSess, ...sessions.value];
+
   console.log("✨ 虚拟页面已就绪，等待首句发言后触发后端注册。");
 }
 
@@ -615,7 +652,9 @@ async function sendText() {
 
     // 4. 调用后端 API
     // 注意：这里用的是我们刚测通的 /chat 接口
-    const res = await apiPost(`/consult/${serverId}/chat?content=${encodeURIComponent(finalContent)}`, {});
+    const res = await apiPost(`/consult/${serverId}/chat`, {
+      content: finalContent
+    });
 
     // 5. 后端返回结果上屏
     currentSession.value.messages.push({
@@ -623,7 +662,7 @@ async function sendText() {
       role: "ai",
       type: "text",
       time: nowTime(),
-      text: res.content // 后端返回的 JSON 里 content 字段
+      text: res.content || res.text || "AI 暂时没有给出答复"
     });
 
     saveSessions(); // 保存聊天记录到本地
@@ -687,10 +726,10 @@ async function onFileChange(e) {
   // 2. 使用 FileReader 读取图片
   const reader = new FileReader();
   reader.readAsDataURL(file);
-  
+
   reader.onload = async () => {
     const base64WithPrefix = reader.result; // 带有 data:image/jpeg;base64, 前缀
-    
+
     // 3. UI 表现：先在聊天界面显示这张图
     currentSession.value.messages.push({
       id: uid(),
@@ -703,7 +742,7 @@ async function onFileChange(e) {
     // 4. 准备数据发送
     // 💡 关键：剥离前缀，只把纯 Base64 字符串发给后端
     const pureBase64 = base64WithPrefix.split(',')[1];
-    
+
     await sendWithImage(pureBase64);
   };
 }
@@ -718,7 +757,8 @@ async function sendWithImage(base64Data) {
 
     // 2. 调用后端 chat 接口
     // 💡 注意：content 我们给一个默认的引导词，base64 放在 Body 里
-    const res = await apiPost(`/consult/${sid}/chat?content=请分析这张图片中的健康问题`, {
+    const res = await apiPost(`/consult/${sid}/chat`, {
+      content: "请分析这张图片中的健康问题",
       image_base64: base64Data
     });
 
@@ -734,7 +774,7 @@ async function sendWithImage(base64Data) {
     // 4. 💡 顾问小贴士：给用户一个画像更新的提示
     // 因为后端现在会自动贴标签，我们在这里可以给用户一点正反馈
     console.log("检测到可能的画像进化信号...");
-    
+
   } catch (err) {
     console.error("识图请求失败", err);
     currentSession.value.messages.push({
@@ -767,12 +807,16 @@ onBeforeUnmount(() => {
 .consult-page {
   height: 100%;
   box-sizing: border-box;
-  padding: 14px 0 0;
   overflow: hidden;
   overflow-x: hidden;
   display: grid;
   grid-template-rows: auto auto auto 1fr auto auto;
   gap: 10px;
+  width: 100%;
+  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+  
+  margin: 0 auto;        /* 👈 居中 */
+  padding: 16px;    
 }
 
 /* 顶部导航 */
@@ -780,43 +824,59 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  
+
   /* 💡 关键：确保 padding 算在宽度内，且宽度不溢出 */
   box-sizing: border-box;
-  width: 100%; 
-  padding: 8px 12px; /* 内部留一点距离，不让按钮贴边 */
-  
-  background: #fff;
+  width: 100%;
+  padding: 8px 12px;
+  /* 内部留一点距离，不让按钮贴边 */
+
+  background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
   border: 1px solid #e7efef;
   border-radius: 16px;
 }
 
 /* 左右两个侧边盒子的逻辑 */
 .nav-side-box {
-  width: 80px;      /* 👈 固定一个宽度，保证左右是对称的 */
+  width: 80px;
+  /* 👈 固定一个宽度，保证左右是对称的 */
   display: flex;
   gap: 8px;
 }
 
 .nav-side-box.right {
-  justify-content: flex-end; /* 👈 让右边的按钮靠最右排队 */
+  justify-content: flex-end;
+  /* 👈 让右边的按钮靠最右排队 */
 }
 
 /* 中间标题的逻辑 */
 .nav-title {
-  flex: 1;           /* 👈 占据中间剩下的所有空间 */
+  flex: 1;
+  /* 👈 占据中间剩下的所有空间 */
   text-align: center;
-  min-width: 0;      /* 防止文字太长撑破布局 */
+  min-width: 0;
+  /* 防止文字太长撑破布局 */
 }
 
-.t1 { font-size: 15px; font-weight: 900; color: #123; }
-.t2 { font-size: 11px; color: #6b7f7f; margin-top: 2px; }
+.t1 {
+  font-size: 15px;
+  font-weight: 900;
+  color: #123;
+}
+
+.t2 {
+  font-size: 11px;
+  color: #6b7f7f;
+  margin-top: 2px;
+}
 
 /* 按钮样式（微调，确保居中） */
 .icon-btn {
-  width: 32px;       /* 稍微调小一点点，适配小屏幕 */
+  width: 32px;
+  /* 稍微调小一点点，适配小屏幕 */
   height: 32px;
-  display: flex;     /* 改用 flex 居中更稳 */
+  display: flex;
+  /* 改用 flex 居中更稳 */
   align-items: center;
   justify-content: center;
   background: #fff;
@@ -825,12 +885,13 @@ onBeforeUnmount(() => {
   cursor: pointer;
   padding: 0;
   font-size: 16px;
-  flex-shrink: 0;    /* 👈 关键：不准被挤扁 */
+  flex-shrink: 0;
+  /* 👈 关键：不准被挤扁 */
 }
 
 /* 类别 */
 .modes {
-  background: #fff;
+  background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
   border: 1px solid #e7efef;
   border-radius: 14px;
   padding: 10px;
@@ -985,54 +1046,125 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
 }
 
+.wiki-link-card {
+  margin-top: 12px;
+  background: #fdfdfd;
+  /* 浅色卡片底色 */
+  border: 1px solid #e0f2f2;
+  /* 淡青色边框 */
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(23, 162, 162, 0.06);
+}
+
+.wiki-link-card:active {
+  transform: scale(0.97);
+  /* 点击反馈 */
+  background: #f0fafa;
+}
+
+.wiki-link-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wiki-icon {
+  font-size: 20px;
+}
+
+.wiki-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.wiki-label {
+  font-size: 10px;
+  color: #17a2a2;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.wiki-title-mini {
+  font-size: 13px;
+  color: #1a1a1a;
+  font-weight: bold;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-arrow {
+  color: #bdc3c7;
+  font-size: 18px;
+  font-weight: bold;
+}
+
 /* 输入区 */
 .inputbar {
   display: flex;
-  align-items: center;    /* 👈 垂直居中 */
-  gap: 10px;              /* 间距 */
+  align-items: center;
+  /* 👈 垂直居中 */
+  gap: 10px;
+  /* 间距 */
   padding: 10px 16px;
   background: #fff;
   border-top: 1px solid #f0f4f4;
-  height: 60px;           /* 👈 给容器一个固定总高度 */
+  height: 60px;
+  /* 👈 给容器一个固定总高度 */
   box-sizing: border-box;
+  margin-bottom: -30px;
 }
 
 /* 2. 加号按钮：彻底居中 */
 .plus {
-  width: 40px;            /* 👈 宽度与高度保持一致，呈正方形 */
+  width: 40px;
+  /* 👈 宽度与高度保持一致，呈正方形 */
   height: 40px;
   background: #fff;
   border: 1px solid #e7efef;
   border-radius: 12px;
-  font-size: 24px;        /* 加号大一点 */
+  font-size: 24px;
+  /* 加号大一点 */
   color: #17a2a2;
   cursor: pointer;
   flex-shrink: 0;
-  
+
   /* 💡 绝杀：使用 grid 确保加号死死钉在正中心 */
   display: grid;
-  place-items: center; 
+  place-items: center;
   padding: 0;
 }
 
 /* 3. 输入框：高度对齐，禁止拉伸 */
 .input {
-  flex: 1;                /* 占据剩余所有空间 */
-  height: 40px;           /* 👈 与加号、发送按钮高度完全一致 */
+  flex: 1;
+  /* 占据剩余所有空间 */
+  height: 40px;
+  /* 👈 与加号、发送按钮高度完全一致 */
   border: 1px solid #e7efef;
   border-radius: 12px;
   padding: 8px 12px;
   font-size: 14px;
   outline: none;
-  resize: none;           /* 👈 禁止用户手动拉伸 */
-  box-sizing: border-box; /* 👈 确保 Padding 不会撑大高度 */
-  line-height: 22px;      /* 调整文字行高，使其看起来在垂直中心 */
+  resize: none;
+  /* 👈 禁止用户手动拉伸 */
+  box-sizing: border-box;
+  /* 👈 确保 Padding 不会撑大高度 */
+  line-height: 22px;
+  /* 调整文字行高，使其看起来在垂直中心 */
 }
 
 /* 4. 发送按钮：高度对齐 */
 .send {
-  width: 70px;            /* 稍微宽一点 */
-  height: 40px;           /* 👈 同样是 40px */
+  width: 70px;
+  /* 稍微宽一点 */
+  height: 40px;
+  /* 👈 同样是 40px */
   background: #17a2a2;
   color: #fff;
   border: none;

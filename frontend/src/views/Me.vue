@@ -591,7 +591,6 @@ async function removeMember(id) {
 .me-page {
   height: 100%;
   box-sizing: border-box;
-  padding: 14px 0 0;
   overflow: hidden;
   /* 整页不滚动 */
   overflow-x: hidden;
@@ -599,6 +598,11 @@ async function removeMember(id) {
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 12px;
+  width: 100%;
+  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+  
+  margin: 0 auto;        /* 👈 居中 */
+  padding: 16px;    
 }
 
 /* 顶部 */
