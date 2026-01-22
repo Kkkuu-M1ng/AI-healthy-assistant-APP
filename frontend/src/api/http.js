@@ -4,7 +4,7 @@ const isLocal = window.location.hostname === 'localhost' || window.location.host
 
 // 1. 根据环境自动选择后端地址
 // 以后重启 cpolar，你只需要改下面这一行网址就行
-const PUBLIC_BACKEND = "http://3ab9df0f.r15.cpolar.top"; 
+const PUBLIC_BACKEND = "https://ff7c7e8.r15.cpolar.top"; 
 const LOCAL_BACKEND  = "http://127.0.0.1:8000";
 
 export const BACKEND_URL = isLocal ? LOCAL_BACKEND : PUBLIC_BACKEND;

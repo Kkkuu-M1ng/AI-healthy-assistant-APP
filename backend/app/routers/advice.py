@@ -39,7 +39,7 @@ class AdviceDetailOut(BaseModel):
     title: str
     reason: str
     tags: list[str]
-    detail: list[str]
+    detail_json: str | None = None
 
 @router.get("/advice", response_model=list[AdviceListOut])
 def list_advice(
@@ -89,35 +89,7 @@ def get_advice_detail(
         title=a.title,
         reason=a.reason,
         tags=load_list(a.tags_json),
-        detail=load_list(a.detail_json),
-    )
-
-# （测试用）创建建议：方便你在 Swagger 里先验证 list/detail
-@router.post("/advice", response_model=AdviceDetailOut)
-def create_advice(
-    data: AdviceCreate,
-    session: Session = Depends(get_session),
-    uid: int = Depends(get_current_user_id),
-):
-    a = AdviceItem(
-        user_id=uid,
-        member_id=data.member_id,
-        title=data.title,
-        reason=data.reason,
-        tags_json=dump_list(data.tags),
-        detail_json=dump_list(data.detail),
-    )
-    session.add(a)
-    session.commit()
-    session.refresh(a)
-
-    return AdviceDetailOut(
-        id=a.id,
-        member_id=a.member_id,
-        title=a.title,
-        reason=a.reason,
-        tags=data.tags,
-        detail=data.detail,
+        detail_json=a.detail_json, # 👈 直接把 JSON 字符串给前端
     )
 
 @router.delete("/{advice_id}") # 💡 同理，这里只需收 ID

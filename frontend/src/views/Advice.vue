@@ -30,14 +30,13 @@
         <div class="bt">待办任务</div>
 
         <!-- 1. 渲染待办任务 -->
-        <div v-for="it in activeTasks" :key="it.id" class="row task active-task" @click="openTask(it.id)">
+        <div v-for="it in pendingTasks" :key="it.id" class="row task active-task" @click="openTask(it.id)">
           <div class="row-content">
             <div class="r-title">{{ it.title }}</div>
-            <div class="r-sub">{{ it.freq }} · {{ it.due || "长期" }}</div>
+            <div class="r-sub">{{ translateFreq(it.freq) }}  {{ formatDate(it.created_at) }}</div>
           </div>
           <div class="del-box" @click.stop="removeItem('tasks', it.id)">🗑️</div>
         </div>
-        <div v-if="activeTasks.length === 0" class="empty">暂时没有待办任务，真棒！</div>
 
         <!-- 2. 【核心新增】已完成任务折叠区 -->
         <div v-if="doneTasks.length > 0" class="done-section">
@@ -87,20 +86,59 @@ const errorMsg = ref("");
 // 1. 增加控制折叠的状态
 const showDoneTasks = ref(false);
 
-// 2. 增加两个计算属性，自动过滤任务
-// 待办任务：done 为 false
-const activeTasks = computed(() => {
-  return taskList.value.filter(t => !t.done);
+// 1. 定义一个“今天”的参照物
+const todayStr = new Date().toISOString().split('T')[0];
+
+// 2. 待办任务 (Pending Tasks)
+const pendingTasks = computed(() => {
+  return taskList.value.filter(t => {
+    // 逻辑：要么是一次性且没完成，要么是长期任务且今天没打卡
+    if (!t.repeating) {
+      return !t.done;
+    } else {
+      // 检查最后打卡日期是不是今天
+      return !(t.last_completed_at && t.last_completed_at.startsWith(todayStr));
+    }
+  });
 });
 
-// 已完成任务：done 为 true
+// 3. 已完成任务 (Done Tasks)
 const doneTasks = computed(() => {
-  return taskList.value.filter(t => t.done);
+  return taskList.value.filter(t => {
+    // 逻辑：要么是一次性且已完成，要么是长期任务且今天打过卡了
+    if (!t.repeating) {
+      return t.done;
+    } else {
+      return t.last_completed_at && t.last_completed_at.startsWith(todayStr);
+    }
+  });
 });
 
-const activeMember = computed(() => {
-  return members.value.find(m => m.id === activeMemberId.value) || members.value[0] || null;
-});
+const translateFreq = (freq) => {
+  if (!freq) return '一次性'; // 如果 freq 是空的，默认就是一次性任务
+  
+  const lowerFreq = freq.toLowerCase();
+  
+  if (lowerFreq.includes('daily') || lowerFreq.includes('weekly') || lowerFreq.includes('每')) {
+    return '长期任务';
+  }
+  if (lowerFreq.includes('once')) {
+    return '一次性';
+  }
+  
+  return freq; // 如果是“每周三次”这种，直接显示
+};
+
+// 2. 时间翻译官：只负责把 UTC 转成本地日期
+const formatDate = (dateStr) => {
+  if (!dateStr) return '111';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString(); // 返回 "YYYY/MM/DD" 格式
+  } catch {
+    return '';
+  }
+};
 
 async function loadListsByMember() {
   if (!activeMemberId.value) {
@@ -109,10 +147,18 @@ async function loadListsByMember() {
     return;
   }
   const mid = activeMemberId.value;
+  console.log(`🕵️‍♂️ 前端正在请求成员 ID 为: ${mid} 的任务列表`);
+  if (!mid) {
+    console.warn("⚠️ 成员 ID 尚未就绪，已取消本次数据请求");
+    taskList.value = []; // 顺便清空一下列表
+    adviceList.value = [];
+    return; // 直接退出，不发请求
+  }
   const [advice, tasks] = await Promise.all([
     apiGet(`/advice?member_id=${mid}`),
     apiGet(`/tasks?member_id=${mid}`),
   ]);
+  console.log("📥 收到后端传来的任务列表:", tasks); 
   adviceList.value = advice;
   taskList.value = tasks;
 }
@@ -239,7 +285,8 @@ async function handleCompleteTask(task) {
   margin: 0;
   display: flex;
   flex-direction: column;
-
+  max-width: 450px;
+  margin: 0 auto;
   padding: 16px;
   box-sizing: border-box;
   background: linear-gradient(0deg, #f5f9f8 0%, #dff5ef 100%);
@@ -293,6 +340,8 @@ async function handleCompleteTask(task) {
 .block {
   margin-top: 16px;
   flex-shrink: 0;
+  width: 100%;             /* 👈 必须是 100% */
+  box-sizing: border-box;
 }
 
 .bt {
@@ -308,7 +357,8 @@ async function handleCompleteTask(task) {
   border: 1px solid #eef5f5;
   border-radius: 14px;
   padding: 14px;
-  width: 100%;
+  width: 100%;             /* 👈 必须是 100% */
+  box-sizing: border-box;
   margin-bottom: 10px;
   display: flex; /* 👈 左右布局 */
   align-items: center;

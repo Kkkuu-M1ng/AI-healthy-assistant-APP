@@ -287,11 +287,9 @@
 <script setup>
 import { computed, reactive, ref, onMounted } from "vue";
 import PageShell from "../components/PageShell.vue";
-import { apiGet, apiPost, getToken } from "../api/http";
+import { apiGet, apiPost, getToken, API_BASE, BACKEND_URL } from "../api/http";
 
 // ====== localStorage store（写在组件内，避免你额外建文件）======
-const LS_KEY = "ai_family_doc_v1";
-const API_BASE = "http://127.0.0.1:8000/api";
 
 async function apiRequest(method, path, body) {
   const resp = await fetch(`${API_BASE}${path}`, {

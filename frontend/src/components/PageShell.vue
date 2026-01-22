@@ -47,7 +47,7 @@ function go(path) {
   flex-direction: column;
   width: 100%;         /* 占满屏幕宽度 */
   height: 100vh;        /* 占满屏幕高度 */
-  max-width: 100%; 
+  max-width: 450px; 
   padding: 0;
   margin: 0 auto;       /* 在电脑上居中显示 */
   overflow-x: hidden;
@@ -68,7 +68,7 @@ function go(path) {
   overflow-x: hidden;
   overflow-y: auto; /* 只让中间这块滚 */
   padding: 0; /* 👈 这里必须设为 0 */
-  width: 100% !important;
+  width: 100%;
   box-sizing: border-box !important;
   max-width: 100% !important;
   margin-left: 0 !important;

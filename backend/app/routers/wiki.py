@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List, Optional
 from fastapi import Request
-from sqlalchemy import func
+from sqlalchemy import func, text
 import json
 
 from ..db import get_session
@@ -30,6 +30,44 @@ def recommend_wiki(
         
     return results
 
+@router.get("/wiki/search")
+def search_wiki(
+    q: str, # 接收前端传来的搜索关键词
+    session: Session = Depends(get_session)
+):
+    """
+    根据关键词模糊搜索文章标题和内容
+    """
+    if not q:
+        return []
+        
+    # 1. 优先搜索标题匹配的文章
+    title_matches = session.exec(
+        select(WikiArticle).where(WikiArticle.title.contains(q)).limit(10)
+    ).all()
+    
+    # 2. 获取已找到文章的 ID，防止重复
+    found_ids = {article.id for article in title_matches}
+    
+    results = list(title_matches) # 先把头等奖装进去
+    
+    # 3. 如果头等奖还不够 10 个，再去内容里找
+    if len(results) < 10:
+        needed = 10 - len(results)
+        
+        content_matches = session.exec(
+            select(WikiArticle).where(
+                # 💡 确保内容匹配，且不是刚才已经找到的
+                WikiArticle.content.contains(q),
+                WikiArticle.id.not_in(found_ids) 
+            ).limit(needed)
+        ).all()
+        
+        # 把参与奖追加到后面
+        results.extend(content_matches)
+    
+    return results
+
 # 1. 获取百科列表 (支持按分类过滤)
 @router.get("/wiki", response_model=List[WikiArticle])
 def list_wiki(
@@ -50,3 +88,4 @@ def get_wiki_detail(article_id: int, session: Session = Depends(get_session)):
     if not article:
         raise HTTPException(status_code=404, detail="文章不存在")
     return article
+

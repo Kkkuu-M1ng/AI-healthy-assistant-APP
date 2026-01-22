@@ -189,12 +189,12 @@ const formatCategory = (cat) => {
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   border: none;
-  font-size: 26px;
+  font-size: 30px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
   cursor: pointer;
   z-index: 10;
-  padding-bottom: 4px; /* 👈 微调箭头的视觉重心 */
+  padding-bottom: 8px; /* 👈 微调箭头的视觉重心 */
 }
 
 .safe-bottom {

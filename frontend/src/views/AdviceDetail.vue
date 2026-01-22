@@ -11,18 +11,27 @@
       <!-- 👇👇👇 重点修复：加上 v-if="advice" 👇👇👇 -->
       <div v-if="advice" class="card">
         <div class="h1">{{ advice.title }}</div>
-        <div class="sub">ID：{{ id }}</div>
 
         <div class="section">
-          <div class="st">为什么给你这个建议</div>
+          <div class="st">为什么给你这个建议？</div>
           <div class="p">{{ advice.reason }}</div>
         </div>
 
         <div class="section">
-          <div class="st">怎么做</div>
+          <div class="st">💡 怎么做 (Actions)</div>
           <ul class="ul">
-            <!-- 💡 这里的变量名要和你脚本里 map 出来的名字对应 -->
-            <li v-for="(x, i) in advice.steps" :key="i">{{ x }}</li>
+            <li v-for="(action, i) in advice.actions" :key="i">
+              {{ action.text }}
+            </li>
+          </ul>
+        </div>
+
+        <div class="section">
+          <div class="st">📌 注意事项 (Tips)</div>
+          <ul class="ul tips-ul">
+            <li v-for="(tip, i) in advice.tips" :key="i">
+              {{ tip }}
+            </li>
           </ul>
         </div>
 
@@ -53,22 +62,37 @@ const router = useRouter();
 
 // 1. 定义变量
 const id = computed(() => route.params.id);
-const advice = ref(null); // 初始为空
+const advice = ref({
+  title: "加载中...",
+  reason: "",
+  actions: [], // 👈 新增
+  tips: []     // 👈 新增
+});
 const loading = ref(true);
 
 // 2. 页面加载时抓取真实数据
 async function fetchDetail() {
   loading.value = true;
   try {
-    // 调用后端：GET /api/advice/{id}
     const res = await apiGet(`/advice/${id.value}`);
-    
-    // 💡 适配后端字段：
-    // 后端存的是 detail_json (字符串)，我们需要解析它
-    // 如果没有 detail_json，就给个默认数组
+
+    // 1. 核心修复：手动解析 detail_json
+    let detailData = { actions: [], tips: [] };
+    if (res.detail_json) {
+      try {
+        const parsed = JSON.parse(res.detail_json);
+        detailData.actions = parsed.actions || [];
+        detailData.tips = parsed.tips || [];
+      } catch (e) {
+        console.error("解析 detail_json 失败");
+      }
+    }
+
+    // 2. 赋值
     advice.value = {
       ...res,
-      steps: res.detail ? res.detail : ["按照问诊时的医嘱执行", "如有不适请及时停用"]
+      actions: detailData.actions,
+      tips: detailData.tips
     };
   } catch (e) {
     console.error("加载建议详情失败", e);
@@ -83,54 +107,104 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page{
+.page {
   box-sizing: border-box;
   width: 100%;
-  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
-  
-  margin: 0 auto;        /* 👈 居中 */
-  padding: 16px;    
+  max-width: 450px;
+  /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+
+  margin: 0 auto;
+  /* 👈 居中 */
+  padding: 16px;
 }
 
-.nav{
+.nav {
   display: grid;
   grid-template-columns: 36px 1fr 36px;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
 }
-.back{
-  width: 36px; height: 36px;
-  border: 1px solid #e7efef;
+
+.back {
+  width: 36px;
+  height: 36px;
+  border: 2px solid #e7efef;
   background: #fff;
   border-radius: 12px;
   font-size: 22px;
   cursor: pointer;
+  display: flex;
+  /* 变成 flex 容器 */
+  justify-content: center;
+  /* 水平居中 */
+  align-items: center;
+  /* 垂直居中 */
 }
-.title{
+
+.title {
   text-align: center;
   font-weight: 900;
   color: #123;
 }
-.spacer{ width: 36px; height: 36px; }
 
-.card{
+.spacer {
+  width: 36px;
+  height: 36px;
+}
+
+.card {
   background: #fff;
   border: 1px solid #e7efef;
   border-radius: 14px;
   padding: 12px;
 }
-.h1{ font-size: 15px; font-weight: 900; color:#123; }
-.sub{ margin-top: 6px; font-size: 12px; color:#6b7f7f; }
 
-.section{ margin-top: 12px; }
-.st{ font-weight: 900; color:#123; margin-bottom: 6px; }
-.p{ font-size: 13px; color:#2a3c3c; line-height: 1.6; }
-.ul{ margin:0; padding-left: 18px; font-size: 13px; color:#2a3c3c; line-height: 1.6; }
+.h1 {
+  font-size: 24px;
+  font-weight: 900;
+  color: #123;
+}
 
-.warn{
+.sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7f7f;
+}
+
+.section {
+  margin-top: 12px;
+}
+
+.st {
+  font-weight: 900;
+  color: #123;
+  margin-bottom: 6px;
+  text-align: left;
+  font-size: 22px;
+  margin-top: 30px;
+
+}
+
+.p {
+  font-size: 14px;
+  color: #2a3c3c;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 16px;
+  color: #2a3c3c;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.warn {
   margin-top: 12px;
   font-size: 12px;
-  color:#6b7f7f;
+  color: #6b7f7f;
 }
 </style>

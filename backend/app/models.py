@@ -68,13 +68,21 @@ class TaskItem(SQLModel, table=True):
 
     title: str
     freq: str = ""
-    due: str = ""            # 简化：先用字符串，如 "2025-01-01"，没有就空
-    done: bool = False
+    due: str = ""
+    done: bool = False           # 一次性任务完成状态
 
     detail_json: str = Field(default="[]")   # list[str]
-    logs_json: str = Field(default="[]")     # list[str] 完成记录时间戳列表（可选）
+    logs_json: str = Field(default="[]")     # list[str] 打卡记录时间戳列表
+    delta_json: str = Field(default="{}")    # 新增 delta 字段，存 dict
 
-    created_at: datetime = Field(default_factory=datetime.utcnow) 
+    # ✅ 新增字段
+    repeating: bool = Field(default=False)
+    streak: int = Field(default=0)
+    doneToday: bool = False       # 今日是否打卡
+    last_completed_at: Optional[datetime] = Field(default=None)
+    safe_days_needed: int = 0     # 安全区倒计时天数
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ConsultSession(SQLModel, table=True):
     """

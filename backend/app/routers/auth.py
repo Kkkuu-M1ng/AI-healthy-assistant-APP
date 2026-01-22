@@ -17,9 +17,9 @@ IS_DEV_MODE = False
 
 # 根据开关自动切换前端跳转地址
 if IS_DEV_MODE:
-    frontend_base_url = "http://localhost:5173"
+    frontend_base_url = "https://localhost:5173"
 else:
-    frontend_base_url = "http://2e6c8f2.r21.vip.cpolar.cn" 
+    frontend_base_url = "http://ff7c7e8.r15.cpolar.top" 
 
 # 💡 填入你从“微信测试号管理页面”看到的那两串字符
 WX_APPID = "wx34535c62052a74b3"
@@ -83,7 +83,12 @@ def wechat_login(code: str = Query(...), session: Session = Depends(get_session)
     token = create_access_token(sub=str(user.id))
     
     # 拼凑跳转链接，把 Token 挂在 URL 后面
-    redirect_url = f"{frontend_base_url}/#/home?token={token}"
+    base = frontend_base_url.rstrip('/')
+    target_path = f"/?token={token}" # 👈 Vue Hash 模式下，参数应该在 # 号之前
+    
+    # 最终地址：https://.../#/home?token=xxx
+    # 为了兼容，我们直接跳到根，让 App.vue 去捡
+    redirect_url = f"{base}/#/{target_path}"
     
     print(f"🔗 正在引导用户跳回首页: {user.nickname}")
     

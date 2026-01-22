@@ -8,6 +8,13 @@
         <p class="sub-title">来自权威指南的专业解读</p>
       </div>
 
+      <!-- 👇👇👇 重点：新增搜索框 👇👇👇 -->
+      <div class="search-bar">
+        <input type="text" class="search-input" placeholder="搜索病症、药品、护理方法..." v-model="searchQuery"
+          @input="handleSearch" />
+        <span class="search-icon">🔍</span>
+      </div>
+
       <!-- 2. 分类栏：粘性置顶 -->
       <div class="sticky-tabs">
         <div class="tabs-inner">
@@ -64,6 +71,34 @@ const activeTab = ref(localStorage.getItem(LS_WIKI_TAB) || 'all');
 const wikiList = ref([]);
 const loading = ref(false);
 
+const searchQuery = ref('');
+
+// 💡 核心：增加一个“防抖”函数，防止用户每打一个字就请求一次
+let searchTimeout = null;
+
+function handleSearch() {
+  clearTimeout(searchTimeout);
+  
+  // 如果输入框空了，就加载分类列表
+  if (!searchQuery.value.trim()) {
+    loadWikiList();
+    return;
+  }
+  
+  // 等用户停止输入 500 毫秒后，再真正去搜索
+  searchTimeout = setTimeout(async () => {
+    loading.value = true;
+    try {
+      const res = await apiGet(`/wiki/search?q=${searchQuery.value}`);
+      wikiList.value = res;
+    } catch (e) {
+      console.error("搜索失败");
+    } finally {
+      loading.value = false;
+    }
+  }, 500);
+}
+
 // 2. 核心加载函数
 async function loadWikiList() {
   loading.value = true;
@@ -81,6 +116,7 @@ async function loadWikiList() {
 
 // 3. 监听 Tab 切换：变了就记在小本子上
 watch(activeTab, (newTab) => {
+  searchQuery.value = ""; // 👈 清空搜索
   localStorage.setItem(LS_WIKI_TAB, newTab);
   loadWikiList();
 });
@@ -104,10 +140,12 @@ const formatCategory = (cat) => {
   scroll-behavior: smooth;
 
   width: 100%;
-  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
-  
-  margin: 0 auto;        /* 👈 居中 */
-  padding: 16px;    
+  max-width: 450px;
+  /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+
+  margin: 0 auto;
+  /* 👈 居中 */
+  padding: 16px;
 }
 
 /* 自定义滚动条 */
@@ -134,6 +172,35 @@ const formatCategory = (cat) => {
   font-size: 13px;
   color: #8a9999;
   margin-top: 4px;
+}
+
+.search-bar {
+  position: relative;
+  padding: 0 20px;
+  margin-bottom: 15px;
+}
+
+.search-input {
+  width: 100%;
+  height: 44px;
+  border-radius: 22px; /* 胶囊形状 */
+  border: 1px solid #eef5f5;
+  background: #fff;
+  padding: 0 40px 0 20px; /* 右边留出图标位置 */
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.search-input:focus {
+  outline: none;
+  border-color: #17a2a2;
+}
+
+.search-icon {
+  position: absolute;
+  right: 35px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #bdc3c7;
 }
 
 /* 💡 粘性分类栏 */
