@@ -52,11 +52,19 @@
         <!-- 完成记录 / 打卡日志 -->
         <div class="section">
           <div class="st">完成记录</div>
+
           <div v-if="logs.length" class="logs">
-            <div v-for="(x, i) in logs" :key="i" class="log">{{ x }}</div>
+            <div v-for="(x, i) in displayedLogs" :key="i" class="log">{{ x }}</div>
+
+            <!-- 折叠/展开按钮 -->
+            <button v-if="logs.length > LOGS_SHOW_COUNT" class="toggle-logs-btn"
+              @click="logsCollapsed = !logsCollapsed">
+              {{ logsCollapsed ? `显示全部 (${logs.length})` : "折叠" }}
+            </button>
           </div>
           <div v-else class="empty">暂无记录</div>
         </div>
+
 
         <div class="warn">
           ⚠️ 本功能为健康管理打卡，不替代医生诊断；如不适明显请及时就医。
@@ -98,6 +106,24 @@
 
       </div>
 
+      <!-- 任务说明区 -->
+      <div v-if="task" class="card task-rules">
+        <div class="h1">任务规则说明</div>
+
+        <div class="section">
+          <ul>
+            <li><strong>分数消除机制：</strong>慢性病标签对应的分数可以通过完成相关任务逐步消除，完成一次打卡会减少部分分值。</li>
+            <li><strong>回弹机制：</strong>如果连续未打卡，任务对应的分数可能回升（回弹），提示健康风险。</li>
+            <li><strong>连续打卡奖励：</strong>连续完成打卡可获得额外奖励分数或降低风险等级，奖励随天数递增。</li>
+            <li><strong>降级机制：</strong>连续未完成任务会触发标签等级下降或分数回弹，提醒用户注意健康状况。</li>
+          </ul>
+        </div>
+
+        <div class="section note">
+          <small>💡 提示：以上机制仅针对慢性病标签，感冒等短期疾病不会影响长期分数。</small>
+        </div>
+      </div>
+
       <!-- 底部安全区留白 -->
       <div style="height: 80px;"></div>
     </div>
@@ -130,7 +156,8 @@ const task = ref({
   steps: []
 });
 
-const loading = ref(true);
+const logsCollapsed = ref(true); // 默认折叠
+const LOGS_SHOW_COUNT = 3;       // 默认显示前5条
 const done = ref(false);
 const doneToday = ref(false);
 const logs = ref([]);
@@ -143,35 +170,61 @@ const progressPercent = computed(() => {
   return Math.min(100, Math.floor((streak.value / task.value.safe_days_needed) * 100));
 });
 
+const displayedLogs = computed(() => {
+  if (logsCollapsed.value) {
+    return logs.value.slice(0, LOGS_SHOW_COUNT);
+  }
+  return logs.value;
+});
+
 // ------------------ 加载任务 ------------------
-async function loadTaskDetail() {
+async function loadTaskDetail({ keepDone = false } = {}) {
   const res = await apiGet(`/tasks/${id.value}`);
-  
-  // 💡 对齐后端返回的新字段
-  task.value = { ...res, steps: res.detail };
-  done.value = res.done;
-  doneToday.value = res.doneToday;
-  logs.value = res.logs;
-  streak.value = res.streak;
+
+  if (keepDone) {
+    const doneCache = done.value;
+    const doneTodayCache = doneToday.value;
+    task.value = { ...res, steps: res.detail };
+    done.value = doneCache;
+    doneToday.value = doneTodayCache;
+  } else {
+    task.value = { ...res, steps: res.detail };
+    done.value = res.done;
+    doneToday.value = res.doneToday;
+  }
+
+  logs.value = res.logs || [];
+  streak.value = res.streak || 0;
 }
+
 
 // 2. 打卡逻辑
 async function toggleDone() {
   if (!confirm("确认完成打卡吗？")) return;
+
+  // 防止重复点击
+  if (done.value || doneToday.value) return;
+
   try {
     const res = await apiPost(`/tasks/${id.value}/complete`, {});
+
     if (res.ok) {
-      // 💡 不再手动算分，直接重新拉取后端算好的最新状态
-      await loadTaskDetail();
-      delta.value = res.delta; // 显示分数变化
+      // 💡 用后端返回的最新状态更新前端
+      done.value = res.done;           // 一次性任务完成状态
+      doneToday.value = res.doneToday; // 今日打卡状态
+      delta.value = res.delta || {};   // 分数变化
+      streak.value = res.streak ?? streak.value; // 如果后端返回 streak
+
       alert("打卡成功！");
     } else {
       alert(res.msg || "操作失败");
     }
   } catch (e) {
+    console.error(e);
     alert("网络错误");
   }
 }
+
 
 onMounted(() => {
   loadTaskDetail();
@@ -275,6 +328,16 @@ onMounted(() => {
 
 .section {
   margin-top: 12px;
+}
+
+.toggle-logs-btn {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #17a2a2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 900;
 }
 
 .st {
@@ -407,5 +470,33 @@ onMounted(() => {
   font-size: 12px;
   color: #123;
   margin-top: 4px;
+}
+
+.task-rules {
+  margin-top: 16px;
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.task-rules .h1 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.task-rules .section ul {
+  padding-left: 18px;
+  margin: 0;
+  list-style-type: disc;
+  font-size: 14px;
+  color: #333;
+}
+
+.task-rules .section.note {
+  margin-top: 8px;
+  color: #666;
+  font-size: 12px;
 }
 </style>

@@ -37,7 +37,7 @@
         </button>
       </div>
 
-      
+
       <div ref="msgBox" class="msgs">
         <div v-for="msg in (currentSession?.messages || [])" :key="msg.id" class="row" :class="msg.role">
           <div class="bubble">
@@ -45,11 +45,13 @@
               <span class="who">{{ msg.role === 'user' ? '我' : 'AI' }}</span>
               <span class="time">{{ msg.time }}</span>
             </div>
-            
+
             <!-- 1. 文本消息 (AI 和用户都走这个) -->
             <div v-if="msg.type === 'text'" class="text-group">
               <!-- 💡 核心改动：使用 parseMessage 函数处理文本 -->
-              <div class="text">{{ parseMessage(msg.text).text }}</div>
+              <div class="text" :key="msg.id + '-' + msg.text.length">
+                {{ parseMessage(msg.text).text }}
+              </div>
 
               <!-- 💡 核心改动：如果是 AI 发的且带百科链接，显示卡片 -->
               <div v-if="msg.role === 'ai' && parseMessage(msg.text).wikiId" class="wiki-link-card"
@@ -73,13 +75,7 @@
           </div>
         </div>
 
-        <!-- Loading 占位保持原样 -->
-        <div v-if="loading" class="row ai">
-          <div class="bubble">
-            <div class="meta"><span class="who">AI</span><span class="time">...</span></div>
-            <div class="text">正在分析中…</div>
-          </div>
-        </div>
+
       </div>
 
       <!-- 输入区 -->
@@ -158,12 +154,11 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onBeforeUnmount, ref } from "vue";
 import PageShell from "../components/PageShell.vue";
 import { apiPost, getToken, apiGet } from '../api/http';
 import { useRouter, useRoute } from "vue-router";
 
-const LS_MEMBER_KEY = "active_member_id";
 const router = useRouter();
 const route = useRoute();
 const isGenerating = ref(false);
@@ -252,7 +247,7 @@ const parseMessage = (content) => {
       wikiTitle: match[2]
     };
   }
-  
+
   // 没匹配到暗号，原样返回
   return { text: content, wikiId: null, wikiTitle: null };
 };
@@ -619,72 +614,76 @@ const loading = ref(false);
 
 const canSend = computed(() => input.value.trim().length > 0 && !loading.value);
 
+
+/**
+ * 滚动到底部的辅助函数
+ */
+async function scrollToBottom() {
+  // 💡 使用 nextTick 确保在 DOM 更新完毕后再滚动
+  await nextTick();
+
+  const el = msgBox.value;
+  if (el) {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
 async function sendText() {
   const text = input.value.trim();
   if (!text || loading.value) return;
 
-  // 1. 前端UI立刻上屏
   currentSession.value.messages.push({
     id: uid(), role: "user", type: "text", time: nowTime(), text
   });
   input.value = "";
-  touchSessionPreview();
   scrollToBottom();
-
   loading.value = true;
 
   try {
-    // 2. 确保有后端的 SessionID
-    const serverId = await ensureBackendSession(currentSession.value);
-    if (!serverId) {
-      throw new Error("无法连接到服务器，请检查网络或后端服务");
-    }
+    const sid = await ensureBackendSession(currentSession.value);
+    const res = await apiPost(`/consult/${sid}/chat`, { content: text, mode: mode.value });
+    const fullText = res.content || "AI 未能返回内容";
 
-    // 3. 构建 Prompt (实现你的专科路由逻辑)
-    // 技巧：把当前模式对应的 Prompt 拼接到用户内容前面，或者通过 system 角色发送
-    // 这里我们简单粗暴地拼接，让 AI 知道它的身份
-    const currentModeConfig = modes.find(m => m.key === mode.value);
-    const systemInstruction = currentModeConfig ? `【系统指令：${currentModeConfig.prompt}】\n` : "";
-
-    // 如果是该会话的第一句话，带上 System Prompt，否则只发内容
-    // 简单起见，我们每次都带上模式标记，让 AI 保持人设
-    const finalContent = `${systemInstruction}用户描述：${text}`;
-
-    // 4. 调用后端 API
-    // 注意：这里用的是我们刚测通的 /chat 接口
-    const res = await apiPost(`/consult/${serverId}/chat`, {
-      content: finalContent
-    });
-
-    // 5. 后端返回结果上屏
-    currentSession.value.messages.push({
-      id: uid(),
+    // 🚀 【终极打字机魔法】
+    const aiMessage = {
+      id: res.id,
       role: "ai",
       type: "text",
-      time: nowTime(),
-      text: res.content || res.text || "AI 暂时没有给出答复"
-    });
+      text: "",
+      time: nowTime()
+    };
+    currentSession.value.messages.push(aiMessage);
 
-    saveSessions(); // 保存聊天记录到本地
+    const typingSpeed = 50; // 调快一点，更有流式感
+
+    const words = fullText.split('')
+
+    for (const word of words) {
+      const idx = currentSession.value.messages.length - 1
+      const last = currentSession.value.messages[idx]
+
+      currentSession.value.messages[idx] = {
+        ...last,
+        text: last.text + word
+      }
+
+      await scrollToBottom()
+      await new Promise(r => setTimeout(r, typingSpeed))
+    }
+
+    // --- 打字结束 ---
+    console.log("💬 AI 打字完毕");
 
   } catch (err) {
-    console.error(err);
+    console.error("请求失败:", err);
     currentSession.value.messages.push({
-      id: uid(), role: "ai", type: "text", time: nowTime(),
-      text: `(发送失败: ${err.message || '网络错误'})`
+      id: uid(), role: "ai", type: "text", text: "(AI 连接失败)", time: nowTime()
     });
   } finally {
     loading.value = false;
+    saveSessions();
     touchSessionPreview();
-    scrollToBottom();
   }
-}
-
-async function scrollToBottom() {
-  await nextTick();
-  const el = msgBox.value;
-  if (!el) return;
-  el.scrollTop = el.scrollHeight;
 }
 
 /** ============ + 菜单：图片 / 语音转文字 ============ */
@@ -813,10 +812,12 @@ onBeforeUnmount(() => {
   grid-template-rows: auto auto auto 1fr auto auto;
   gap: 10px;
   width: 100%;
-  max-width: 450px;       /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
-  
-  margin: 0 auto;        /* 👈 居中 */
-  padding: 16px;    
+  max-width: 450px;
+  /* 👈 建议设为 450px，这是最美观的手机预览宽度 */
+
+  margin: 0 auto;
+  /* 👈 居中 */
+  padding: 16px;
 }
 
 /* 顶部导航 */
@@ -1027,7 +1028,7 @@ onBeforeUnmount(() => {
 }
 
 .text {
-  font-size: 13px;
+  font-size: 14px;
   color: #123;
   white-space: pre-wrap;
 }

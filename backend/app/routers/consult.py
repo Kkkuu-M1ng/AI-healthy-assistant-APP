@@ -5,6 +5,7 @@ from typing import List
 from datetime import datetime, timedelta
 from .members import load_tags, dump_tags
 from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
 
 import json
 
@@ -22,7 +23,8 @@ def dump_json(obj):
 
 class ChatRequest(BaseModel):
     content: str | None = None
-    image_base64: str | None = None
+    image_base_64: str | None = None
+    mode: str = "common"
 
 # --------------------------
 # 1. 创建会话 (Start)
@@ -127,8 +129,17 @@ def chat(
     ).all()
     payload = [{"role": m.role, "content": m.content} for m in history_rows]
 
+    all_wikis = db.exec(select(WikiArticle)).all()
+    wiki_catalog = [{"id": w.id, "title": w.title, "tags": w.tags_json} for w in all_wikis]
+
     # --- D. 调用通义千问 (识图 + 提取标签) ---
-    ai_result = chat_with_ai_vision(payload, persona_data, data.image_base64)
+    ai_result = chat_with_ai_vision(
+        history_messages=payload, 
+        persona=persona_data, 
+        wiki_catalog=wiki_catalog, # 👈 书单在这里
+        mode=data.mode,            # 👈 模式在这里
+        image_base_64=data.image_base_64 # 👈 图片在这里
+    )
     ai_reply_text = ai_result.get("reply", "我正在思考...")
 
     # --- E. 【画像进化】识图提取新标签并存入 ---
@@ -146,20 +157,14 @@ def chat(
     ai_msg = ChatMessage(session_id=session_id, role="assistant", content=ai_reply_text)
 
     # --- G. 【智能关联百科】 ---
-    try:
-        # 只在回复比较长时才去查，提高效率
-        if len(ai_reply_text) > 5:
-            all_wikis = db.exec(select(WikiArticle)).all()
-            for wiki in all_wikis:
-                wiki_tags = json.loads(wiki.tags_json) if wiki.tags_json else []
-                # 如果 AI 回复里提到了百科的标签
-                if any(tag in ai_reply_text for tag in wiki_tags):
-                    # 💡 此时 ai_msg 已经存在，可以安全地追加暗号了
-                    ai_msg.content += f"\n\n[[WIKI_LINK:{wiki.id}:{wiki.title}]]"
-                    print(f"📖 成功关联百科: {wiki.title}")
-                    break
-    except Exception as e:
-        print(f"⚠️ 关联百科小失败: {e}")
+    recommended_id = ai_result.get("recommended_wiki_id")
+    if recommended_id:
+        # AI 推荐了文章，我们去数据库里把它找出来
+        recommended_article = db.get(WikiArticle, recommended_id)
+        if recommended_article:
+            # 拼成暗号，加在回复末尾
+            ai_msg.content += f"\n\n[[WIKI_LINK:{recommended_article.id}:{recommended_article.title}]]"
+            print(f"📖 AI 精准推荐了百科文章: {recommended_article.title}")
 
     # --- H. 存入 AI 回复并提交 ---
     db.add(ai_msg)

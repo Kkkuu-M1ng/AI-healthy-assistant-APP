@@ -12,8 +12,10 @@ client = OpenAI(
 
 EXPERT_PROFILES = {
     "child": {
-        "role": "你是一位专业的儿科医生。",
-        "focus": """
+        "role":
+        "你是一位专业的儿科医生。",
+        "focus":
+        """
         【工作准则】：
         1. 核心关注点：儿童体征（精神状态、食欲、体温）、用药剂量安全（需询问体重）、生长发育是否符合年龄段。
         2. 沟通风格：语言必须简洁清晰，避免使用复杂医学术语。
@@ -21,8 +23,10 @@ EXPERT_PROFILES = {
         """
     },
     "pregnant": {
-        "role": "你是一位专业的妇产科医生。",
-        "focus": """
+        "role":
+        "你是一位专业的妇产科医生。",
+        "focus":
+        """
         【工作准则】：
         1. 核心关注点：孕周、胎动情况、有无腹痛/见红/破水等产科急症信号。
         2. 安全红线：所有用药和生活建议都必须将“对胎儿无害”作为最高优先级。严禁推荐任何FDA C级及以上的药物。
@@ -30,8 +34,10 @@ EXPERT_PROFILES = {
         """
     },
     "elder": {
-        "role": "你是一位专业的老年病科（全科）医生。",
-        "focus": """
+        "role":
+        "你是一位专业的老年病科（全科）医生。",
+        "focus":
+        """
         【工作准则】：
         1. 核心关注点：必须优先考虑用户的既往病史（高血压、糖尿病等）和当前用药清单，警惕药物相互作用。
         2. 沟通风格：解释病情要慢、要通俗，避免信息过载。给出的任务必须简单、易于执行。
@@ -39,8 +45,10 @@ EXPERT_PROFILES = {
         """
     },
     "common": {
-        "role": "你是一位专业的全科医生。",
-        "focus": """
+        "role":
+        "你是一位专业的全科医生。",
+        "focus":
+        """
         【工作准则】：
         1. 核心关注点：对常见病、多发病进行初步诊断和鉴别。如果信息不足，通过追问来收集关键病史。
         2. 沟通风格：保持客观、科学、严谨。
@@ -49,30 +57,43 @@ EXPERT_PROFILES = {
     }
 }
 
+
 def chat_with_ai_vision(
-    history_messages: list, 
-    persona: dict, 
-    mode: str = "common", # 👈 2. 确保函数能接收 mode 参数
-    image_base_64: str = None
-) -> dict:
-    
+        history_messages: list,
+        persona: dict,
+        wiki_catalog: list,
+        mode: str = "common",  # 👈 2. 确保函数能接收 mode 参数
+        image_base_64: str = None) -> dict:
+
     # 3. 动态选择专家人设
     expert = EXPERT_PROFILES.get(mode, EXPERT_PROFILES["common"])
-    
+
     # 4. 构造“专家版”系统指令
     system_instruction = f"""
     【你的身份】：{expert['role']}
     【你的工作重点】：{expert['focus']}
 
+    【你的知识库（书单）】：
+    {json.dumps(wiki_catalog, ensure_ascii=False)}
+
     【用户画像参考】：{persona}
 
-    【任务】：分析用户的文字和图片，结合画像给出回复，并提取新发现的症状标签。
+    【问诊阶段】：当前问诊阶段为 {{stage}} ，AI 必须严格遵循阶段规则：
+    - symptom_explore：仅让用户自由描述症状，不下结论
+    - key_clarify：针对关键症状提问，补全信息，每次仅能提问一到两个问题
+    - summary_advice：总结信息并给出健康生活建议（非诊断为什么什么病）
+
+    【任务】：分析用户的文字和图片，结合画像给出回复，并识别用户可能存在的**慢性病**，并给出对应标签。
+            ⚠️ 不要输出任何短期症状（如感冒、发热、头痛等），只关注慢性病。
+            如果在你的知识库中发现了与用户当前问题【高度相关】的文章，你必须在回复中引用它的 ID。
 
     【输出格式要求】：
     你必须且只能输出一个严格的 JSON 对象，格式如下：
     {{
-      "reply": "你的自然语言回复",
-      "new_tags": ["本次新发现的症状标签"]
+    "reply": "你的自然语言回复",
+    "new_tags": ["本次新发现的慢性病症状标签"],
+    "next_stage": "symptom_explore/key_clarify/summary_advice"  # 可选提示下一阶段
+    "recommended_wiki_id": 123  // 👈 如果有推荐，填入文章ID；如果没有，填 null
     }}
     """
 
@@ -80,10 +101,10 @@ def chat_with_ai_vision(
     start_index = 0
     # ... (你原来的 start_index 逻辑) ...
     actual_history = history_messages[start_index:]
-    
+
     # 6. 构造消息体 (保持不变)
     messages = [{"role": "system", "content": system_instruction}]
-    model_to_use = "qwen-max" # 默认用最聪明的
+    model_to_use = "qwen-max"  # 默认用最聪明的
 
     if image_base_64:
         model_to_use = "qwen-vl-plus"
@@ -94,10 +115,9 @@ def chat_with_ai_vision(
     try:
         # 7. 调用 AI (保持不变)
         response = client.chat.completions.create(
-            model=model_to_use, 
+            model=model_to_use,
             messages=messages,
-            response_format={"type": "json_object"}
-        )
+            response_format={"type": "json_object"})
         raw_content = response.choices[0].message.content
         return json.loads(raw_content)
 

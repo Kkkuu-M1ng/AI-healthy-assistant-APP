@@ -35,7 +35,7 @@
             <div class="dash-label">核心风险</div>
             <div class="risk-tags">
               <div v-for="(val, name) in activeMember?.tags" :key="name" class="risk-dot" :class="'lv-' + val.level">
-                {{ name }}
+                {{ name }} (Lv{{ val.level }})
               </div>
               <div v-if="!activeMember?.tags || Object.keys(activeMember.tags).length === 0" class="none-text">暂无风险
               </div>

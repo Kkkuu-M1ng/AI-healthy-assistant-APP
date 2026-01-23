@@ -73,19 +73,30 @@ def complete_task(
     # 一次性任务如果做完了，直接返回
     if not task.repeating and task.done:
         return {"ok": False, "msg": "该任务已永久完成"}
+    
     # 循环任务如果今天打过卡了，也直接返回
+    # ✅ 修改点 1: 确保 task.last_completed_at 存储的是本地时间后，这里的对比才准确
     if task.repeating and task.last_completed_at and task.last_completed_at.date() == date.today():
-        return {"ok": False, "msg": "今日已打卡，请明天再来"}
+        return {
+            "ok": True,
+            "delta": 0,
+            "done": task.done,
+            "doneToday": True
+        }
 
     # 3. 核心：计算连续打卡天数
-    yesterday = datetime.utcnow().date() - timedelta(days=1)
+    # ✅ 修改点 2: 使用 date.today() 获取本地时间的“昨天”，而不是 UTC 的昨天
+    yesterday = date.today() - timedelta(days=1)
+    
     if task.last_completed_at and task.last_completed_at.date() == yesterday:
         task.streak += 1 # 昨天打了，是连续的
     else:
         task.streak = 1 # 中断了，重新从 1 开始
 
     # 4. 更新任务自身状态
-    task.last_completed_at = datetime.utcnow()
+    # ✅ 修改点 3: 使用 datetime.now() 存入服务器本地时间，而不是 UTC
+    task.last_completed_at = datetime.now()
+    
     logs = json.loads(task.logs_json or "[]")
     logs.append(task.last_completed_at.strftime("%Y-%m-%d %H:%M"))
     task.logs_json = json.dumps(logs)
@@ -98,19 +109,26 @@ def complete_task(
     member = session.get(FamilyMember, task.member_id)
     if member:
         tags_before = load_tags(member.tags_json)
-        # 💡 把任务的“连续天数”传给引擎，让它计算额外奖励
-        # 注意：你的 risk_engine 也需要能接收 streak 参数
+        # 传入 streak 计算奖励
         result = checkin_with_rebound(tags_before, task.title)
         
-        # 把进化后的新画像存回数据库
         member.tags_json = dump_tags(result["tags"])
         session.add(member)
+    else:
+        # 防御性代码：万一没找到 member，给个空 result 防止下面报错
+        result = {"delta": {}} 
     
     # 6. 一次性提交所有更改
     session.commit()
     
-    # 7. 把分数变化返回给前端
-    return { "ok": True, "delta": result.get("delta") }
+    # 7. 返回结果
+    return {
+        "ok": True,
+        "delta": result.get("delta"),
+        "done": task.done,
+        # ✅ 这里现在会返回 True，因为上面刚赋值了 datetime.now()，肯定等于 date.today()
+        "doneToday": task.repeating and task.last_completed_at.date() == date.today()
+    }
 
 @router.get("/tasks/{task_id}")
 def get_task_detail(
@@ -121,18 +139,15 @@ def get_task_detail(
     task = session.get(TaskItem, task_id)
     if not task: raise HTTPException(404)
 
-    # 💡 1. 去查这个任务对应的家人画像
     member = session.get(FamilyMember, task.member_id)
-    tags_data = load_tags(member.tags_json)
+    tags_data = load_tags(member.tags_json) if member else {} # 加个 safe check
     
-    # 2. 找到任务关联的那个标签
     related_tag_data = {}
     for tag_name, tag_info in tags_data.items():
         if tag_name in task.title:
             related_tag_data = tag_info
             break
 
-    # 3. 构造“豪华套餐”返回给前端
     return {
         "id": task.id,
         "title": task.title,
@@ -147,14 +162,17 @@ def get_task_detail(
             {"level": 2, "min_score": 40, "max_score": 69},
             {"level": 1, "min_score": 15, "max_score": 39},
         ],
-        # 👇👇👇 重点：把画像里的数据“借”过来 👇👇👇
         "score": related_tag_data.get("score"),
         "current_level": related_tag_data.get("level"),
         "safe_days": related_tag_data.get("safe_days", 0),
-        "safe_days_needed": 7, # 暂时写死
+        "safe_days_needed": 7,
         
-        # 动态计算“今天打卡了吗”
-        "doneToday": task.last_completed_at and task.last_completed_at.date() == date.today(),
+        # ✅ 这里的逻辑现在正确了，因为 last_completed_at 是本地时间，today 也是本地时间
+        "doneToday": (
+            task.last_completed_at is not None 
+            and task.last_completed_at.date() == date.today()
+        ),
+        "created_at": task.created_at # 补上定义的 model 需要的字段
     }
 
 @router.get("/tasks", response_model=list[TaskListOut])
